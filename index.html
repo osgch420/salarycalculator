@@ -143,20 +143,17 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 </head>
 <body>
 
-<!-- 탭 네비게이션 -->
 <nav class="tab-nav">
   <button class="tab-btn active" onclick="switchTab('work')">💼 알바 계산기</button>
   <button class="tab-btn" onclick="switchTab('ledger')">📒 가계부</button>
 </nav>
 
-<!-- ═══════════════════════════════ 알바 탭 ═══════════════════════════════ -->
 <div class="tab-panel active" id="tab-work">
 <div class="wrap">
   <h1 style="margin-top:8px">알바 계산기</h1>
   <p class="sub">근무 내역을 입력하면 캘린더와 가계부에 자동으로 반영됩니다.</p>
   <div class="status-bar" id="workStatus">연결 중...</div>
 
-  <!-- 캘린더 영역 -->
   <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <h2 style="margin:0">
@@ -209,7 +206,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
     </div>
 
-    <!-- 출퇴근 시간 -->
     <div class="row" id="timeFields">
       <div class="field">
         <label>출근 시간</label>
@@ -241,7 +237,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
     </div>
 
-    <!-- 🌟 수정된 시간/금액 입력 란 -->
     <div class="row">
       <div class="field">
         <label id="hoursLabel" for="hours">근무 시간 (자동계산)</label>
@@ -251,7 +246,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <label id="actualPayLabel" for="actualPay">실제 받은 금액 (선택)</label>
         <input type="number" id="actualPay" min="0" placeholder="예: 5.6 -> 56000원 변환">
         
-        <!-- 🌟 새롭게 추가된 0원 합산용 체크박스 -->
         <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-weight:600; font-size:12px; cursor:pointer; color:var(--ink-soft);">
           <input type="checkbox" id="isZeroPay" onchange="toggleZeroPay()" style="width:16px; height:16px; margin:0; padding:0;">
           다른 날 합산해서 받음 (이 날은 0원 처리)
@@ -277,21 +271,20 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   </div>
 
   <div class="card">
-    <h2>전체 요약 <span class="tag" id="workCntTag">0건</span></h2>
+    <h2 id="workSummaryTitle">해당 월 요약 <span class="tag" id="workCntTag">0건</span></h2>
     <div class="summary-grid">
-      <div class="stat s-accent"><div class="k">총 소요 시간 (전체 합산)</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
-      <div class="stat s-accent"><div class="k">총 급여 (전체 합산)</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
+      <div class="stat s-accent"><div class="k">총 소요 시간 (월 합산)</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
+      <div class="stat s-accent"><div class="k">총 급여 (월 합산)</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
     </div>
   </div>
 
   <div class="card">
-    <h2>일별 기록</h2>
+    <h2>해당 월 일별 기록</h2>
     <div id="dailyArea"><p class="empty">불러오는 중...</p></div>
   </div>
 </div>
 </div>
 
-<!-- ═══════════════════════════════ 가계부 탭 ═══════════════════════════════ -->
 <div class="tab-panel" id="tab-ledger">
 <div class="wrap">
   <h1 style="margin-top:8px">가계부</h1>
@@ -300,8 +293,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
   <div class="month-filter">
     <label style="margin:0;white-space:nowrap">월 선택</label>
-    <input type="month" id="ledgerMonth">
-    <button class="btn-ghost" onclick="renderLedger()">적용</button>
+    <input type="month" id="ledgerMonth" onchange="renderLedger()">
   </div>
 
   <div class="card">
@@ -447,7 +439,6 @@ if (typeof window.supabase === 'undefined') {
   function ym(s){ return s.slice(0,7); }
 
   function calcPay(entry) {
-    // 🌟 DB에서 0으로 저장되었으면 그대로 0원 반환
     if (entry.actual_pay !== undefined && entry.actual_pay !== null && entry.actual_pay !== "") {
       return Number(entry.actual_pay);
     }
@@ -463,7 +454,6 @@ if (typeof window.supabase === 'undefined') {
   document.getElementById("actualPay").addEventListener("blur", handleMoneyInput);
   document.getElementById("ledgerAmt").addEventListener("blur", handleMoneyInput);
 
-  // 🌟 0원 합산 처리 토글 함수
   window.toggleZeroPay = function() {
     const isZero = document.getElementById("isZeroPay").checked;
     const payInput = document.getElementById("actualPay");
@@ -586,23 +576,36 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("calMonthTotal").textContent = won(monthPay);
   }
 
+  // 🌟 알바 탭 렌더링 (일별 기록 및 요약을 해당 월 기준으로 필터링)
   function renderWork(){
     document.getElementById("wage").value = settings.wage||"";
     document.getElementById("weekStart").value = settings.week_start;
 
     renderCalendar();
 
-    const list = [...workEntries].sort((a,b)=> a.date<b.date?1:-1);
+    const y = currentCalDate.getFullYear();
+    const m = currentCalDate.getMonth();
+    const monthPrefix = `${y}-${String(m+1).padStart(2, '0')}`;
+
+    // 전체 리스트 중 현재 캘린더에 띄워진 '해당 월' 데이터만 필터링
+    const list = [...workEntries]
+      .filter(e => e.date.startsWith(monthPrefix))
+      .sort((a,b)=> a.date<b.date?1:-1);
     
     const totH = list.reduce((s,e)=>s+Number(e.hours||0),0);
     const totPay = list.reduce((s,e)=>s+calcPay(e), 0);
 
     document.getElementById("totHours").textContent = fmtH(totH);
     document.getElementById("totPay").textContent = won(totPay);
-    document.getElementById("workCntTag").textContent = list.length+"건";
+    
+    // 요약 타이틀 업데이트
+    const summaryTitle = document.getElementById("workSummaryTitle");
+    if(summaryTitle) {
+      summaryTitle.innerHTML = `${m+1}월 요약 <span class="tag" id="workCntTag">${list.length}건</span>`;
+    }
 
     const da = document.getElementById("dailyArea");
-    if(!list.length){ da.innerHTML='<p class="empty">아직 기록이 없습니다.</p>'; }
+    if(!list.length){ da.innerHTML='<p class="empty">해당 월에는 기록이 없습니다.</p>'; }
     else{
       let h='<table><thead><tr><th>날짜</th><th>요일</th><th>내역 / 시간</th><th class="num">급여</th><th></th></tr></thead><tbody>';
       for(const e of list){
@@ -626,7 +629,6 @@ if (typeof window.supabase === 'undefined') {
         
         detailHtml += payDateBadge;
 
-        // 🌟 0원 처리된 경우 예쁘게 표시
         let payDisplay = "";
         if (isManualPay) {
           if (e.actual_pay === 0) {
@@ -671,7 +673,6 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("sumBalance").textContent = won(balance);
     document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
 
-    // 🌟 가계부 내역 중 수입이 0원(합산됨)인 항목은 가계부에 보이지 않게 필터링 추가
     const workRows = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month && calcPay(e) > 0)
       .map(e=>({
@@ -780,7 +781,6 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("actualPay").value = "";
     document.getElementById("workNote").value = "";
     
-    // 🌟 체크박스 초기화
     document.getElementById("isZeroPay").checked = false;
     document.getElementById("actualPay").disabled = false;
     
@@ -817,7 +817,6 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("hours").value = entry.hours || "";
     document.getElementById("workNote").value = entry.note || "";
 
-    // 🌟 수정 시 0원 처리 체크박스 복원
     if (entry.actual_pay === 0) {
       document.getElementById("isZeroPay").checked = true;
       document.getElementById("actualPay").value = "0";
@@ -891,7 +890,7 @@ if (typeof window.supabase === 'undefined') {
     const note = document.getElementById("workNote").value.trim();
     const actualPayInput = document.getElementById("actualPay").value;
     const hoursInput = document.getElementById("hours").value;
-    const isZeroPay = document.getElementById("isZeroPay").checked; // 🌟 0원 체크 여부
+    const isZeroPay = document.getElementById("isZeroPay").checked; 
     
     if(!date){alert("날짜를 선택하세요.");return;}
     
@@ -927,7 +926,6 @@ if (typeof window.supabase === 'undefined') {
         end_time: end_time
       };
 
-      // 🌟 체크박스가 선택되었다면 강제로 0원 저장
       if (isZeroPay) {
         submitData.actual_pay = 0;
       } else if (actualPayInput !== "") {
