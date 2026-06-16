@@ -138,7 +138,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .time-select-group { display: flex; gap: 4px; align-items: center; }
 .time-select-group select { padding: 8px; font-size: 14px; }
 
-/* 🌟 새롭게 다듬어진 월 필터 UI */
+/* 월 필터 UI */
 .month-filter-wrap {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
@@ -154,8 +154,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .month-filter input[type=month]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; transition: .2s; }
 .month-filter input[type=month]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 
-/* 연간 요약 배지 */
-.yearly-summary { display: flex; gap: 8px; }
+/* 🌟 연간 요약 배지 업데이트 (잔액 포함) */
+.yearly-summary { display: flex; gap: 8px; flex-wrap: wrap; }
 .y-stat {
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   padding: 8px 12px; font-size: 13px; display: flex; align-items: center; gap: 8px;
@@ -165,6 +165,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .y-stat .val { font-weight: 800; font-variant-numeric: tabular-nums; }
 .y-stat .val.in { color: var(--income); }
 .y-stat .val.ex { color: var(--expense); }
+.y-stat.bal { background: var(--ink); color: #fff; border: none; }
+.y-stat.bal .lbl { color: var(--line-strong); }
+
+/* 가계부 수입/지출 라디오 폼 */
+.type-toggle { display: flex; gap: 16px; padding: 10px 0; }
+.type-toggle label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: 14px; cursor: pointer; }
+.type-toggle input[type=radio] { width: 16px; height: 16px; margin: 0; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -323,28 +330,42 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <p class="sub">알바 수입은 지정하신 '돈 들어오는 날'을 기준으로 반영됩니다.</p>
   <div class="status-bar" id="ledgerStatus">연결 중...</div>
 
-  <!-- 🌟 새로운 디자인의 월 선택 & 올해 연간 요약 영역 -->
+  <!-- 월 선택 & 올해 연간 요약 영역 -->
   <div class="month-filter-wrap">
     <div class="month-filter">
       <input type="month" id="ledgerMonth" onchange="renderLedger()">
     </div>
     <div class="yearly-summary">
-      <div class="y-stat"><span class="lbl">올해 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
-      <div class="y-stat"><span class="lbl">올해 지출</span><span class="val ex" id="yearlyExpense">0원</span></div>
+      <div class="y-stat"><span class="lbl">올해 총 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
+      <div class="y-stat"><span class="lbl">올해 총 지출</span><span class="val ex" id="yearlyExpense">0원</span></div>
+      <!-- 🌟 올해 잔액 배지 추가 -->
+      <div class="y-stat bal"><span class="lbl">올해 잔액</span><span class="val" id="yearlyBalance">0원</span></div>
     </div>
   </div>
 
   <div class="card">
     <h2>이번 달 요약</h2>
     <div class="summary-grid">
-      <div class="stat s-income"><div class="k">수입 (알바 포함)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
+      <div class="stat s-income"><div class="k">수입 (알바 + 기타 수입)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
       <div class="stat s-expense"><div class="k">지출</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
       <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
     </div>
   </div>
 
   <div class="card" id="ledgerInputCard">
-    <h2 id="ledgerFormTitle">지출 추가</h2>
+    <h2 id="ledgerFormTitle">내역 추가</h2>
+    
+    <!-- 🌟 수입/지출 선택 폼 추가 -->
+    <div class="row">
+      <div class="field">
+        <label>구분</label>
+        <div class="type-toggle">
+          <label><input type="radio" name="ledgerType" value="expense" checked onchange="updateLedgerCat()"> 지출</label>
+          <label><input type="radio" name="ledgerType" value="income" onchange="updateLedgerCat()"> 수입</label>
+        </div>
+      </div>
+    </div>
+
     <div class="row">
       <div class="field">
         <label for="ledgerDate">날짜</label>
@@ -353,15 +374,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <div class="field">
         <label for="ledgerCat">항목</label>
         <select id="ledgerCat">
-          <option value="카드비">카드비</option>
-          <option value="식비">식비</option>
-          <option value="쇼핑">쇼핑</option>
-          <option value="교통비">교통비</option>
-          <option value="통신비">통신비</option>
-          <option value="구독료">구독료</option>
-          <option value="의료비">의료비</option>
-          <option value="문화/여가">문화/여가</option>
-          <option value="기타">기타</option>
+          <!-- 스크립트로 자동 변경됨 -->
         </select>
       </div>
     </div>
@@ -376,7 +389,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
     </div>
     <div style="display:flex; gap:8px; margin-top:10px;">
-      <button class="btn-full" id="addLedgerBtn" style="margin-top:0; flex:3;">지출 추가</button>
+      <button class="btn-full" id="addLedgerBtn" style="margin-top:0; flex:3;">기록 추가</button>
       <button class="btn-ghost" id="cancelLedgerBtn" style="margin-top:0; flex:1; display:none;" onclick="cancelLedgerEdit()">수정 취소</button>
     </div>
   </div>
@@ -422,6 +435,18 @@ if (typeof window.supabase === 'undefined') {
   // 수정 모드 상태 관리 변수
   let editingWorkId = null;
   let editingLedgerId = null;
+
+  // 🌟 가계부 카테고리 업데이트 함수
+  window.updateLedgerCat = function() {
+    const type = document.querySelector('input[name="ledgerType"]:checked').value;
+    const catSelect = document.getElementById("ledgerCat");
+    if(type === 'expense') {
+      catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="기타">기타</option>';
+    } else {
+      catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="기타수입">기타수입</option>';
+    }
+  };
+  updateLedgerCat(); // 초기 실행
 
   // 출근 시간: 09시(9) ~ 23시(23) 로만 구성
   let startHourOpts = '<option value="">시</option>';
@@ -504,7 +529,7 @@ if (typeof window.supabase === 'undefined') {
     }
   };
 
-  function toggleWorkType() {
+  window.toggleWorkType = function() {
     const type = document.getElementById("workType").value;
     const timeFields = document.getElementById("timeFields");
     const actualPayLabel = document.getElementById("actualPayLabel");
@@ -692,30 +717,55 @@ if (typeof window.supabase === 'undefined') {
     }
   }
 
-  function renderLedger(){
+  // 🌟 가계부 탭 렌더링
+  window.renderLedger = function(){
     const month = document.getElementById("ledgerMonth").value; // e.g., "2026-05"
     const year = month.slice(0, 4); // "2026"
 
-    // 🌟 연간 요약 계산 및 반영
+    // 🌟 연간 수입(알바+직접입력) 합산
     const yearlyWorkIncome = workEntries
       .filter(e => (e.payment_date || e.date).startsWith(year))
       .reduce((s, e) => s + calcPay(e), 0);
+    const yearlyManualIncome = ledgerEntries
+      .filter(e => e.entry_date.startsWith(year) && e.type === "income")
+      .reduce((s, e) => s + Number(e.amount), 0);
+    const totalYearlyIncome = yearlyWorkIncome + yearlyManualIncome;
       
+    // 🌟 연간 지출 합산
     const yearlyLedgerExpense = ledgerEntries
-      .filter(e => e.entry_date.startsWith(year))
+      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense"))
       .reduce((s, e) => s + Number(e.amount), 0);
 
-    document.getElementById("yearlyIncome").textContent = won(yearlyWorkIncome) + "원";
+    const yearlyBalance = totalYearlyIncome - yearlyLedgerExpense;
+
+    document.getElementById("yearlyIncome").textContent = won(totalYearlyIncome) + "원";
     document.getElementById("yearlyExpense").textContent = won(yearlyLedgerExpense) + "원";
+    
+    // 🌟 잔액 + - 기호 및 색상 처리
+    const balEl = document.getElementById("yearlyBalance");
+    if (yearlyBalance > 0) {
+      balEl.textContent = "+" + won(yearlyBalance) + "원";
+      balEl.style.color = "#4caf50"; // 초록색
+    } else if (yearlyBalance < 0) {
+      balEl.textContent = won(yearlyBalance) + "원";
+      balEl.style.color = "#ff5252"; // 빨간색
+    } else {
+      balEl.textContent = "0원";
+      balEl.style.color = "#fff";
+    }
 
     // 이번 달 요약
     const workIncome = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month)
       .reduce((s,e)=> s + calcPay(e), 0);
+    const monthlyManualIncome = ledgerEntries
+      .filter(e => ym(e.entry_date) === month && e.type === "income")
+      .reduce((s, e) => s + Number(e.amount), 0);
 
     const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
-    const totalExpense = monthLedger.reduce((s,e)=> s+Number(e.amount), 0);
-    const totalIncome = workIncome;
+    const totalExpense = monthLedger.filter(e => !e.type || e.type === "expense").reduce((s,e)=> s+Number(e.amount), 0);
+    
+    const totalIncome = workIncome + monthlyManualIncome;
     const balance = totalIncome - totalExpense;
 
     document.getElementById("sumIncome").textContent = won(totalIncome);
@@ -723,6 +773,7 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("sumBalance").textContent = won(balance);
     document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
 
+    // 테이블 렌더링
     const workRows = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month && calcPay(e) > 0)
       .map(e=>({
@@ -738,7 +789,7 @@ if (typeof window.supabase === 'undefined') {
     const expRows = monthLedger.map(e=>({
       id: e.id,
       date: e.entry_date,
-      type: "expense",
+      type: e.type || "expense", // 예전 데이터는 expense
       category: e.category,
       amount: Number(e.amount),
       note: e.note||"",
@@ -775,8 +826,13 @@ if (typeof window.supabase === 'undefined') {
       la.innerHTML=h+'</tbody></table>';
     }
 
+    // 카테고리 통계는 '지출'만 보여주는 게 깔끔합니다.
     const catMap={};
-    for(const e of monthLedger){ catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); }
+    for(const e of monthLedger){ 
+      if(!e.type || e.type === "expense") {
+        catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); 
+      }
+    }
     const catArea=document.getElementById("catArea");
     const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
     if(!cats.length){ catArea.innerHTML='<p class="empty">지출 내역이 없습니다.</p>'; }
@@ -842,13 +898,15 @@ if (typeof window.supabase === 'undefined') {
 
   function resetLedgerForm() {
     editingLedgerId = null;
+    document.querySelector('input[name="ledgerType"][value="expense"]').checked = true;
+    updateLedgerCat();
     document.getElementById("ledgerDate").value = ymd(new Date());
     document.getElementById("ledgerAmt").value = "";
     document.getElementById("ledgerNote").value = "";
     
-    document.getElementById("addLedgerBtn").textContent = "지출 추가";
+    document.getElementById("addLedgerBtn").textContent = "기록 추가";
     document.getElementById("cancelLedgerBtn").style.display = "none";
-    document.getElementById("ledgerFormTitle").textContent = "지출 추가";
+    document.getElementById("ledgerFormTitle").textContent = "내역 추가";
     setStatus("ledgerStatus", "클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
   }
 
@@ -915,12 +973,17 @@ if (typeof window.supabase === 'undefined') {
 
     editingLedgerId = id;
 
+    // 수입/지출 토글 및 카테고리 업데이트
+    const typeValue = entry.type || "expense";
+    document.querySelector(`input[name="ledgerType"][value="${typeValue}"]`).checked = true;
+    updateLedgerCat();
+
     document.getElementById("ledgerDate").value = entry.entry_date;
     document.getElementById("ledgerCat").value = entry.category;
     document.getElementById("ledgerAmt").value = entry.amount;
     document.getElementById("ledgerNote").value = entry.note || "";
 
-    document.getElementById("ledgerFormTitle").textContent = "지출 내역 수정 모드";
+    document.getElementById("ledgerFormTitle").textContent = "내역 수정 모드";
     document.getElementById("addLedgerBtn").textContent = "수정 완료";
     document.getElementById("cancelLedgerBtn").style.display = "block";
     setStatus("ledgerStatus", "기록을 수정 중입니다.", false, true);
@@ -1012,16 +1075,18 @@ if (typeof window.supabase === 'undefined') {
 
   // 저장 및 업데이트 로직 (가계부)
   async function addLedger(){
-    const entry_date=document.getElementById("ledgerDate").value;
-    const category=document.getElementById("ledgerCat").value;
-    const amount=parseFloat(document.getElementById("ledgerAmt").value);
-    const note=document.getElementById("ledgerNote").value.trim();
+    const ledgerType = document.querySelector('input[name="ledgerType"]:checked').value;
+    const entry_date = document.getElementById("ledgerDate").value;
+    const category = document.getElementById("ledgerCat").value;
+    const amount = parseFloat(document.getElementById("ledgerAmt").value);
+    const note = document.getElementById("ledgerNote").value.trim();
+    
     if(!entry_date){alert("날짜를 선택하세요.");return;}
     if(!amount||amount<=0){alert("금액을 올바르게 입력하세요.");return;}
     const btn=document.getElementById("addLedgerBtn"); btn.disabled=true;
     
     try{
-      const submitData = {entry_date, type:"expense", category, amount, note};
+      const submitData = {entry_date, type: ledgerType, category, amount, note};
 
       if (editingLedgerId) {
         const {error}=await sb.from("ledger_entries").update(submitData).eq("id", editingLedgerId);
@@ -1038,7 +1103,7 @@ if (typeof window.supabase === 'undefined') {
   }
 
   window.deleteLedger = async function(id){
-    if(!confirm("이 지출 내역을 정말 삭제할까요?")) return;
+    if(!confirm("이 내역을 정말 삭제할까요?")) return;
     try{
       const {error}=await sb.from("ledger_entries").delete().eq("id",id);
       if(error) throw error;
@@ -1078,4 +1143,5 @@ if (typeof window.supabase === 'undefined') {
 }
 </script>
 </body>
+</html>
 </html>
