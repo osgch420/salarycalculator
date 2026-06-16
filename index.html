@@ -100,29 +100,42 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
 .saved-hint{font-size:12px;color:var(--accent);font-weight:600;height:16px;margin-top:6px}
 
-/* 가계부 배지 */
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
 .badge-in{background:#e6f0ee;color:var(--income)}
 .badge-ex{background:#fbeaea;color:var(--expense)}
-
-/* 월 필터 */
 .month-filter{display:flex;align-items:center;gap:10px;margin-bottom:16px}
 .month-filter input[type=month]{width:auto;padding:8px 10px;font-size:14px}
 .month-filter button{padding:8px 14px;font-size:14px}
-
-/* 카테고리 색 */
 .cat{font-size:12px;font-weight:600;color:var(--ink-soft)}
+
+/* 캘린더 스타일 */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(40px, 1.2fr);
+  gap: 3px; text-align: center; font-size: 13px; margin-top: 10px;
+}
+.cal-header { font-weight: 700; color: var(--ink-soft); padding: 8px 0; background: var(--accent-soft); border-radius: 6px; font-size:12px;}
+.cal-cell {
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 2px;
+  min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+}
+.cal-empty { background: #faf9f6; border-color: transparent; }
+.cal-day { font-weight: 600; margin-bottom: 2px; font-size: 12px; color: var(--ink); }
+.cal-amt { color: var(--money); font-weight: 800; font-size: 11px; word-break: break-all; letter-spacing: -0.5px;}
+.cal-week-total {
+  background: var(--ink); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 11px; border-radius: 6px; word-break: break-all; padding: 0 2px;
+}
+.cal-nav-btn { padding: 4px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
 
-<!-- 탭 네비게이션 -->
 <nav class="tab-nav">
   <button class="tab-btn active" onclick="switchTab('work')">💼 알바 계산기</button>
   <button class="tab-btn" onclick="switchTab('ledger')">📒 가계부</button>
 </nav>
 
-<!-- ═══════════════════════════════ 알바 탭 ═══════════════════════════════ -->
 <div class="tab-panel active" id="tab-work">
 <div class="wrap">
   <h1 style="margin-top:8px">알바 계산기</h1>
@@ -130,10 +143,22 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="status-bar" id="workStatus">연결 중...</div>
 
   <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 style="margin:0">
+        <button class="btn-ghost cal-nav-btn" onclick="changeCalMonth(-1)">◀</button>
+        <span id="calTitle" style="margin:0 8px;">2026년 6월</span>
+        <button class="btn-ghost cal-nav-btn" onclick="changeCalMonth(1)">▶</button>
+      </h2>
+      <div class="tag" style="font-size:13px;">월 합계: <span id="calMonthTotal">0</span>원</div>
+    </div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+  </div>
+
+  <div class="card">
     <h2>시급 설정</h2>
     <div class="row">
       <div class="field">
-        <label for="wage">시급 (원)</label>
+        <label for="wage">기본 시급 (원)</label>
         <input type="number" id="wage" min="0" step="10" placeholder="예: 10030">
       </div>
       <div class="field" style="max-width:200px">
@@ -158,7 +183,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <label for="hours">근무 시간</label>
         <input type="number" id="hours" min="0" step="0.5" placeholder="예: 4 또는 4.5">
       </div>
+      <div class="field">
+        <label for="actualPay">실제 받은 금액 (선택)</label>
+        <input type="number" id="actualPay" min="0" step="10" placeholder="비워두면 시급으로 계산">
+      </div>
     </div>
+    <div style="font-size:12px; color:var(--ink-soft); margin: 6px 0 12px;">* 시급보다 많이/적게 받은 날은 '실제 받은 금액'을 적어주세요.</div>
     <button class="btn-full" id="addWorkBtn">기록 추가</button>
   </div>
 
@@ -166,7 +196,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <h2>전체 요약 <span class="tag" id="workCntTag">0건</span></h2>
     <div class="summary-grid">
       <div class="stat s-accent"><div class="k">총 근무 시간</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
-      <div class="stat s-accent"><div class="k">총 급여</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
+      <div class="stat s-accent"><div class="k">총 급여 (추가수당 포함)</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
     </div>
   </div>
 
@@ -174,32 +204,21 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <h2>일별 기록</h2>
     <div id="dailyArea"><p class="empty">불러오는 중...</p></div>
   </div>
-  <div class="card">
-    <h2>주별 계산</h2>
-    <div id="weeklyArea"><p class="empty">불러오는 중...</p></div>
-  </div>
-  <div class="card">
-    <h2>월별 계산</h2>
-    <div id="workMonthlyArea"><p class="empty">불러오는 중...</p></div>
-  </div>
 </div>
 </div>
 
-<!-- ═══════════════════════════════ 가계부 탭 ═══════════════════════════════ -->
 <div class="tab-panel" id="tab-ledger">
 <div class="wrap">
   <h1 style="margin-top:8px">가계부</h1>
   <p class="sub">알바 수입은 자동으로 반영됩니다. 지출 항목을 직접 추가해 보세요.</p>
   <div class="status-bar" id="ledgerStatus">연결 중...</div>
 
-  <!-- 월 필터 -->
   <div class="month-filter">
     <label style="margin:0;white-space:nowrap">월 선택</label>
     <input type="month" id="ledgerMonth">
     <button class="btn-ghost" onclick="renderLedger()">적용</button>
   </div>
 
-  <!-- 요약 -->
   <div class="card">
     <h2>이번 달 요약</h2>
     <div class="summary-grid">
@@ -209,7 +228,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     </div>
   </div>
 
-  <!-- 지출 추가 -->
   <div class="card">
     <h2>지출 추가</h2>
     <div class="row">
@@ -245,13 +263,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <button class="btn-full" id="addLedgerBtn">지출 추가</button>
   </div>
 
-  <!-- 내역 -->
   <div class="card">
     <h2>전체 내역 <span class="tag" id="ledgerCntTag">0건</span></h2>
     <div id="ledgerArea"><p class="empty">불러오는 중...</p></div>
   </div>
 
-  <!-- 카테고리별 -->
   <div class="card">
     <h2>카테고리별 지출</h2>
     <div id="catArea"><p class="empty">-</p></div>
@@ -269,6 +285,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let settings = { wage:0, week_start:1 };
 let workEntries = [];
 let ledgerEntries = [];
+let currentCalDate = new Date(); // 캘린더용 날짜 상태
 
 // ── 유틸 ──
 function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
@@ -278,6 +295,14 @@ function ymd(d){
 }
 function shortDate(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}.${d.getDate()}`; }
 function ym(s){ return s.slice(0,7); }
+
+// 🌟 실제 수입 계산 함수 (입력된 실제 수입이 있으면 우선 반영, 없으면 시급계산)
+function calcPay(entry) {
+  if (entry.actual_pay !== undefined && entry.actual_pay !== null && entry.actual_pay !== "") {
+    return Number(entry.actual_pay);
+  }
+  return Number(entry.hours) * (Number(settings.wage) || 0);
+}
 
 function setStatus(id, msg, isErr){
   const el = document.getElementById(id);
@@ -303,78 +328,142 @@ function weekStartDate(dateStr){
   return d;
 }
 
+// ══════════════ 캘린더 렌더링 ══════════════
+function changeCalMonth(dir) {
+  currentCalDate.setMonth(currentCalDate.getMonth() + dir);
+  renderWork(); // 캘린더 리렌더링
+}
+
+function renderCalendar() {
+  const y = currentCalDate.getFullYear();
+  const m = currentCalDate.getMonth();
+  document.getElementById("calTitle").textContent = `${y}년 ${m+1}월`;
+
+  const firstDay = new Date(y, m, 1).getDay(); // 0(일) ~ 6(토)
+  const lastDate = new Date(y, m+1, 0).getDate(); // 해당 월의 마지막 날짜
+
+  let html = `
+    <div class="cal-header">일</div><div class="cal-header">월</div>
+    <div class="cal-header">화</div><div class="cal-header">수</div>
+    <div class="cal-header">목</div><div class="cal-header">금</div>
+    <div class="cal-header">토</div><div class="cal-header" style="background:var(--ink);color:#fff">주합계</div>
+  `;
+
+  const monthPrefix = `${y}-${String(m+1).padStart(2, '0')}`;
+  
+  // 날짜별 급여 매핑
+  const entriesMap = {};
+  workEntries.forEach(e => {
+    if (e.date.startsWith(monthPrefix)) {
+      entriesMap[e.date] = (entriesMap[e.date] || 0) + calcPay(e);
+    }
+  });
+
+  let dayCount = 1;
+  let weekPay = 0;
+  let monthPay = 0;
+  let cellCount = 0;
+
+  // 1일 이전의 빈 칸
+  for (let i = 0; i < firstDay; i++) {
+    html += `<div class="cal-cell cal-empty"></div>`;
+    cellCount++;
+  }
+
+  // 날짜 채우기
+  while (dayCount <= lastDate) {
+    const dateStr = `${monthPrefix}-${String(dayCount).padStart(2, '0')}`;
+    const dailyPay = entriesMap[dateStr] || 0;
+    
+    weekPay += dailyPay;
+    monthPay += dailyPay;
+
+    let payHtml = dailyPay > 0 ? `<div class="cal-amt">${won(dailyPay)}</div>` : '';
+
+    // 오늘 날짜 하이라이트
+    const isToday = (dateStr === ymd(new Date()));
+    const dayStyle = isToday ? 'background:var(--accent); color:#fff; border-radius:50%; width:18px; height:18px; display:flex; justify-content:center; align-items:center;' : '';
+
+    html += `<div class="cal-cell ${isToday ? 'cal-today' : ''}">
+                <div class="cal-day" style="${dayStyle}">${dayCount}</div>
+                ${payHtml}
+             </div>`;
+             
+    dayCount++;
+    cellCount++;
+
+    // 일주일 끝날 때 주합계 추가
+    if (cellCount % 7 === 0) {
+      html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`;
+      weekPay = 0;
+    }
+  }
+
+  // 마지막 주 남은 빈 칸 채우기
+  if (cellCount % 7 !== 0) {
+    const remaining = 7 - (cellCount % 7);
+    for (let i = 0; i < remaining; i++) {
+      html += `<div class="cal-cell cal-empty"></div>`;
+    }
+    html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`;
+  }
+
+  document.getElementById("calendarGrid").innerHTML = html;
+  document.getElementById("calMonthTotal").textContent = won(monthPay);
+}
+
+
 // ══════════════ 알바 탭 ══════════════
 function renderWork(){
   document.getElementById("wage").value = settings.wage||"";
   document.getElementById("weekStart").value = settings.week_start;
 
+  // 캘린더 업데이트
+  renderCalendar();
+
   const list = [...workEntries].sort((a,b)=> a.date<b.date?1:-1);
-  const wage = Number(settings.wage)||0;
   const totH = list.reduce((s,e)=>s+Number(e.hours),0);
+  const totPay = list.reduce((s,e)=>s+calcPay(e), 0); // 실제 수입 우선 반영 합계
 
   document.getElementById("totHours").textContent = fmtH(totH);
-  document.getElementById("totPay").textContent = won(totH*wage);
+  document.getElementById("totPay").textContent = won(totPay);
   document.getElementById("workCntTag").textContent = list.length+"건";
 
-  // 일별
+  // 일별 내역 렌더링
   const da = document.getElementById("dailyArea");
   if(!list.length){ da.innerHTML='<p class="empty">아직 기록이 없습니다.</p>'; }
   else{
     let h='<table><thead><tr><th>날짜</th><th>요일</th><th class="num">시간</th><th class="num">일급</th><th></th></tr></thead><tbody>';
     for(const e of list){
       const d=new Date(e.date+"T00:00:00");
+      const pay = calcPay(e);
+      // 수동 입력한 급여인지 표시 (시간당 계산과 다르면 표시)
+      const isManual = (e.actual_pay !== undefined && e.actual_pay !== null && e.actual_pay !== "");
+      const payDisplay = isManual ? `<span style="color:var(--accent);font-size:11px">직접입력</span><br>${won(pay)}` : won(pay);
+
       h+=`<tr><td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
           <td class="num">${fmtH(Number(e.hours))}</td>
-          <td class="num money">${won(Number(e.hours)*wage)}</td>
+          <td class="num money">${payDisplay}</td>
           <td><button class="del" data-id="${e.id}">삭제</button></td></tr>`;
     }
     da.innerHTML=h+'</tbody></table>';
     da.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteWork(b.dataset.id));
   }
-
-  // 주별
-  const wm={};
-  for(const e of list){
-    const ws=weekStartDate(e.date), k=ymd(ws);
-    if(!wm[k]) wm[k]={hours:0,start:ws};
-    wm[k].hours+=Number(e.hours);
-  }
-  renderPeriod("weeklyArea", Object.keys(wm).sort().reverse().map(k=>{
-    const we=new Date(wm[k].start); we.setDate(we.getDate()+6);
-    return {label:`${shortDate(k)} ~ ${we.getMonth()+1}.${we.getDate()}`, hours:wm[k].hours, pay:wm[k].hours*wage};
-  }));
-
-  // 월별
-  const mm={};
-  for(const e of list){ const k=e.date.slice(0,7); mm[k]=(mm[k]||0)+Number(e.hours); }
-  renderPeriod("workMonthlyArea", Object.keys(mm).sort().reverse().map(k=>{
-    const [y,m]=k.split("-");
-    return {label:`${y}년 ${Number(m)}월`, hours:mm[k], pay:mm[k]*wage};
-  }));
 }
 
-function renderPeriod(id, rows){
-  const el=document.getElementById(id);
-  if(!rows.length){ el.innerHTML='<p class="empty">기록이 없습니다.</p>'; return; }
-  el.innerHTML=rows.map(r=>`<div class="period-row">
-    <div><div class="label">${r.label}</div><div class="meta">${fmtH(r.hours)}시간</div></div>
-    <div class="amt">${won(r.pay)}원</div></div>`).join("");
-}
 
 // ══════════════ 가계부 탭 ══════════════
 function renderLedger(){
-  const month = document.getElementById("ledgerMonth").value; // YYYY-MM
-  const wage = Number(settings.wage)||0;
+  const month = document.getElementById("ledgerMonth").value;
 
-  // 알바 수입: 해당 월 work_entries 합산
+  // 알바 수입: 실제수입 계산 함수(calcPay) 적용
   const workIncome = workEntries
     .filter(e=> ym(e.date)===month)
-    .reduce((s,e)=> s+Number(e.hours)*wage, 0);
+    .reduce((s,e)=> s + calcPay(e), 0);
 
-  // 해당 월 ledger (지출만)
   const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
   const totalExpense = monthLedger.reduce((s,e)=> s+Number(e.amount), 0);
-  const totalIncome = workIncome; // 현재는 알바 수입만
+  const totalIncome = workIncome;
   const balance = totalIncome - totalExpense;
 
   document.getElementById("sumIncome").textContent = won(totalIncome);
@@ -382,8 +471,7 @@ function renderLedger(){
   document.getElementById("sumBalance").textContent = won(balance);
   document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
 
-  // 전체 내역 (알바 수입 + 지출 합산, 날짜 내림차순)
-  // 알바 수입을 날짜별로 묶어서 행 생성
+  // 알바 수입 + 지출 합산 행 생성
   const workRows = workEntries
     .filter(e=> ym(e.date)===month)
     .map(e=>({
@@ -391,10 +479,11 @@ function renderLedger(){
       date: e.date,
       type: "income",
       category: "알바 수입",
-      amount: Number(e.hours)*wage,
+      amount: calcPay(e), // 실제수입 적용
       note: fmtH(Number(e.hours))+"시간 근무",
       deletable: false
     }));
+    
   const expRows = monthLedger.map(e=>({
     id: e.id,
     date: e.entry_date,
@@ -412,17 +501,15 @@ function renderLedger(){
     let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
     for(const r of allRows){
       const d=new Date(r.date+"T00:00:00");
-      const badge = r.type==="income"
-        ? '<span class="badge badge-in">수입</span>'
-        : '<span class="badge badge-ex">지출</span>';
-      const amtClass = r.type==="income" ? "num" : "num";
+      const badge = r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>';
       const amtColor = r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700";
       const delBtn = r.deletable ? `<button class="del" data-id="${r.id}">삭제</button>` : "";
+      
       h+=`<tr>
         <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
         <td>${badge}</td>
         <td class="cat">${r.category}</td>
-        <td class="${amtClass}" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
+        <td class="num" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
         <td style="font-size:13px;color:var(--ink-soft)">${r.note}</td>
         <td>${delBtn}</td>
       </tr>`;
@@ -449,17 +536,14 @@ function renderLedger(){
 // ══════════════ Supabase CRUD ══════════════
 async function loadAll(){
   try{
-    // 설정
     const {data:sd, error:se} = await sb.from("app_settings").select("*").eq("id",1).single();
     if(se) throw se;
     if(sd) settings=sd;
 
-    // 알바 기록
     const {data:wd, error:we} = await sb.from("work_entries").select("*");
     if(we) throw we;
     workEntries = wd||[];
 
-    // 가계부 지출
     const {data:ld, error:le} = await sb.from("ledger_entries").select("*");
     if(le) throw le;
     ledgerEntries = ld||[];
@@ -475,17 +559,32 @@ async function loadAll(){
 }
 
 async function addWork(){
-  const date=document.getElementById("workDate").value;
-  const hours=parseFloat(document.getElementById("hours").value);
+  const date = document.getElementById("workDate").value;
+  const hours = parseFloat(document.getElementById("hours").value);
+  const actualPayInput = document.getElementById("actualPay").value;
+  
   if(!date){alert("날짜를 선택하세요.");return;}
   if(!hours||hours<=0){alert("근무 시간을 올바르게 입력하세요.");return;}
-  const btn=document.getElementById("addWorkBtn"); btn.disabled=true;
+  
+  const btn = document.getElementById("addWorkBtn"); 
+  btn.disabled = true;
+  
   try{
-    const {error}=await sb.from("work_entries").insert({date,hours});
+    const insertData = { date, hours };
+    // 실제 받은 금액이 입력되어 있다면 데이터에 추가
+    if(actualPayInput) {
+      insertData.actual_pay = parseFloat(actualPayInput);
+    }
+
+    const {error} = await sb.from("work_entries").insert(insertData);
     if(error) throw error;
-    document.getElementById("hours").value="";
+    
+    document.getElementById("hours").value = "";
+    document.getElementById("actualPay").value = "";
     await loadAll();
-  }catch(err){ setStatus("workStatus","저장 실패: "+(err.message||err),true); }
+  }catch(err){ 
+    setStatus("workStatus","저장 실패: "+(err.message||err) + " (Supabase에 actual_pay 열이 있는지 확인해주세요!)",true); 
+  }
   finally{ btn.disabled=false; }
 }
 
