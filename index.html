@@ -202,7 +202,6 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <label for="workDate">일한 날짜 (근무일)</label>
         <input type="date" id="workDate">
       </div>
-      <!-- 🌟 입금일 추가됨 -->
       <div class="field">
         <label for="paymentDate">돈 들어오는 날 (선택)</label>
         <input type="date" id="paymentDate">
@@ -210,7 +209,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
     </div>
 
-    <!-- 출퇴근 시간 (시간제 전용) -->
+    <!-- 출퇴근 시간 -->
     <div class="row" id="timeFields">
       <div class="field">
         <label>출근 시간</label>
@@ -242,7 +241,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
     </div>
 
-    <!-- 시간/금액 입력 (공통) -->
+    <!-- 🌟 수정된 시간/금액 입력 란 -->
     <div class="row">
       <div class="field">
         <label id="hoursLabel" for="hours">근무 시간 (자동계산)</label>
@@ -251,6 +250,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <div class="field">
         <label id="actualPayLabel" for="actualPay">실제 받은 금액 (선택)</label>
         <input type="number" id="actualPay" min="0" placeholder="예: 5.6 -> 56000원 변환">
+        
+        <!-- 🌟 새롭게 추가된 0원 합산용 체크박스 -->
+        <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-weight:600; font-size:12px; cursor:pointer; color:var(--ink-soft);">
+          <input type="checkbox" id="isZeroPay" onchange="toggleZeroPay()" style="width:16px; height:16px; margin:0; padding:0;">
+          다른 날 합산해서 받음 (이 날은 0원 처리)
+        </label>
       </div>
     </div>
     
@@ -442,6 +447,7 @@ if (typeof window.supabase === 'undefined') {
   function ym(s){ return s.slice(0,7); }
 
   function calcPay(entry) {
+    // 🌟 DB에서 0으로 저장되었으면 그대로 0원 반환
     if (entry.actual_pay !== undefined && entry.actual_pay !== null && entry.actual_pay !== "") {
       return Number(entry.actual_pay);
     }
@@ -456,6 +462,19 @@ if (typeof window.supabase === 'undefined') {
   }
   document.getElementById("actualPay").addEventListener("blur", handleMoneyInput);
   document.getElementById("ledgerAmt").addEventListener("blur", handleMoneyInput);
+
+  // 🌟 0원 합산 처리 토글 함수
+  window.toggleZeroPay = function() {
+    const isZero = document.getElementById("isZeroPay").checked;
+    const payInput = document.getElementById("actualPay");
+    if(isZero) {
+      payInput.value = "0";
+      payInput.disabled = true;
+    } else {
+      payInput.value = "";
+      payInput.disabled = false;
+    }
+  };
 
   function toggleWorkType() {
     const type = document.getElementById("workType").value;
@@ -506,7 +525,6 @@ if (typeof window.supabase === 'undefined') {
     if(tab==="ledger") renderLedger();
   }
 
-  // 캘린더 렌더링
   function changeCalMonth(dir) {
     currentCalDate.setMonth(currentCalDate.getMonth() + dir);
     renderWork();
@@ -530,7 +548,6 @@ if (typeof window.supabase === 'undefined') {
     const monthPrefix = `${y}-${String(m+1).padStart(2, '0')}`;
     
     const entriesMap = {};
-    // 🌟 달력은 무조건 일한 날짜(date) 기준으로 표시합니다.
     workEntries.forEach(e => {
       if (e.date.startsWith(monthPrefix)) {
         entriesMap[e.date] = (entriesMap[e.date] || 0) + calcPay(e);
@@ -569,7 +586,6 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("calMonthTotal").textContent = won(monthPay);
   }
 
-  // 알바 탭 렌더링
   function renderWork(){
     document.getElementById("wage").value = settings.wage||"";
     document.getElementById("weekStart").value = settings.week_start;
@@ -595,7 +611,6 @@ if (typeof window.supabase === 'undefined') {
         
         let detailHtml = '';
         let isManualPay = (e.actual_pay !== undefined && e.actual_pay !== null && e.actual_pay !== "");
-        // 입금일이 근무일과 다를 경우 뱃지 표시
         let payDateBadge = (e.payment_date && e.payment_date !== e.date) 
           ? `<br><span style="font-size:11px;color:var(--income);background:#e6f0ee;padding:2px 4px;border-radius:4px;display:inline-block;margin-top:2px;">💸 ${e.payment_date.slice(5).replace('-','/')} 입금</span>` 
           : '';
@@ -611,7 +626,19 @@ if (typeof window.supabase === 'undefined') {
         
         detailHtml += payDateBadge;
 
-        const payDisplay = isManualPay && e.work_type !== 'freelance' ? `<span style="color:var(--accent);font-size:11px">직접입력</span><br>${won(pay)}` : won(pay);
+        // 🌟 0원 처리된 경우 예쁘게 표시
+        let payDisplay = "";
+        if (isManualPay) {
+          if (e.actual_pay === 0) {
+            payDisplay = `<span style="color:var(--ink-soft);font-size:11px">합산됨</span><br><span style="color:var(--ink-soft);font-weight:normal;">-</span>`;
+          } else if (e.work_type !== 'freelance') {
+            payDisplay = `<span style="color:var(--accent);font-size:11px">직접입력</span><br>${won(pay)}`;
+          } else {
+            payDisplay = won(pay);
+          }
+        } else {
+          payDisplay = won(pay);
+        }
 
         h+=`<tr><td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
             <td>${detailHtml}</td>
@@ -627,11 +654,9 @@ if (typeof window.supabase === 'undefined') {
     }
   }
 
-  // 가계부 탭 렌더링
   function renderLedger(){
     const month = document.getElementById("ledgerMonth").value;
 
-    // 🌟 가계부의 수입은 '입금일(payment_date)'이 우선순위! 없으면 '근무일(date)' 기준
     const workIncome = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month)
       .reduce((s,e)=> s + calcPay(e), 0);
@@ -646,16 +671,15 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("sumBalance").textContent = won(balance);
     document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
 
-    // 🌟 가계부 목록도 입금일 기준으로 표시
+    // 🌟 가계부 내역 중 수입이 0원(합산됨)인 항목은 가계부에 보이지 않게 필터링 추가
     const workRows = workEntries
-      .filter(e=> ym(e.payment_date || e.date)===month)
+      .filter(e=> ym(e.payment_date || e.date)===month && calcPay(e) > 0)
       .map(e=>({
         id: "w-"+e.id,
         date: e.payment_date || e.date, 
         type: "income",
         category: e.work_type === 'freelance' ? "건별/전화 수익" : "알바 수입",
         amount: calcPay(e),
-        // 입금일이 따로 지정된 경우 메모에 근무한 날짜를 표시해 헷갈림 방지
         note: (e.work_type === 'freelance' ? (e.note || "건별 정산") : (fmtH(Number(e.hours))+"시간 근무 " + (e.note||""))) + (e.payment_date && e.payment_date !== e.date ? ` (${e.date} 근무)` : ''),
         editable: false 
       }));
@@ -756,6 +780,10 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("actualPay").value = "";
     document.getElementById("workNote").value = "";
     
+    // 🌟 체크박스 초기화
+    document.getElementById("isZeroPay").checked = false;
+    document.getElementById("actualPay").disabled = false;
+    
     document.getElementById("addWorkBtn").textContent = "기록 추가";
     document.getElementById("cancelWorkBtn").style.display = "none";
     document.getElementById("workFormTitle").textContent = "근무 기록 추가";
@@ -785,10 +813,20 @@ if (typeof window.supabase === 'undefined') {
     toggleWorkType();
     
     document.getElementById("workDate").value = entry.date;
-    document.getElementById("paymentDate").value = entry.payment_date || ""; // 🌟 입금일 값 채우기
+    document.getElementById("paymentDate").value = entry.payment_date || ""; 
     document.getElementById("hours").value = entry.hours || "";
-    document.getElementById("actualPay").value = entry.actual_pay || "";
     document.getElementById("workNote").value = entry.note || "";
+
+    // 🌟 수정 시 0원 처리 체크박스 복원
+    if (entry.actual_pay === 0) {
+      document.getElementById("isZeroPay").checked = true;
+      document.getElementById("actualPay").value = "0";
+      document.getElementById("actualPay").disabled = true;
+    } else {
+      document.getElementById("isZeroPay").checked = false;
+      document.getElementById("actualPay").value = entry.actual_pay || "";
+      document.getElementById("actualPay").disabled = false;
+    }
 
     if (entry.start_time) {
       const [h, m] = entry.start_time.split(":");
@@ -849,10 +887,11 @@ if (typeof window.supabase === 'undefined') {
   async function addWork(){
     const type = document.getElementById("workType").value;
     const date = document.getElementById("workDate").value;
-    const paymentDate = document.getElementById("paymentDate").value; // 🌟 입금일 가져오기
+    const paymentDate = document.getElementById("paymentDate").value;
     const note = document.getElementById("workNote").value.trim();
     const actualPayInput = document.getElementById("actualPay").value;
     const hoursInput = document.getElementById("hours").value;
+    const isZeroPay = document.getElementById("isZeroPay").checked; // 🌟 0원 체크 여부
     
     if(!date){alert("날짜를 선택하세요.");return;}
     
@@ -874,20 +913,28 @@ if (typeof window.supabase === 'undefined') {
       
       if(!hours || hours <= 0){alert("근무 시간을 올바르게 입력하세요."); btn.disabled = false; return;}
     } else {
-      if(!actualPayInput){alert("정산 금액을 입력해주세요."); btn.disabled = false; return;}
+      if(!isZeroPay && !actualPayInput){alert("정산 금액을 입력해주세요."); btn.disabled = false; return;}
     }
 
     try{
       const submitData = { 
         date, 
-        payment_date: paymentDate || null, // 🌟 입금일 전송
+        payment_date: paymentDate || null,
         hours, 
         work_type: type,
         note: note,
         start_time: start_time,
-        end_time: end_time,
-        actual_pay: actualPayInput ? parseFloat(actualPayInput) : null
+        end_time: end_time
       };
+
+      // 🌟 체크박스가 선택되었다면 강제로 0원 저장
+      if (isZeroPay) {
+        submitData.actual_pay = 0;
+      } else if (actualPayInput !== "") {
+        submitData.actual_pay = parseFloat(actualPayInput);
+      } else {
+        submitData.actual_pay = null;
+      }
 
       if (editingWorkId) {
         const {error} = await sb.from("work_entries").update(submitData).eq("id", editingWorkId);
