@@ -333,434 +333,448 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 </div>
 
 <script>
-const SUPABASE_URL = "https://jzvwofjmfislljxofivk.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
-
-const DAYS = ["일","월","화","수","목","금","토"];
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-let settings = { wage:0, week_start:1 };
-let workEntries = [];
-let ledgerEntries = [];
-let currentCalDate = new Date();
-
-// 🌟 시(Hour) 드롭다운 초기화 세팅
-let hourOpts = '<option value="">시</option>';
-for(let i=0; i<24; i++){
-  let h = String(i).padStart(2, '0');
-  hourOpts += `<option value="${h}">${h}</option>`;
-}
-document.getElementById("startHour").innerHTML = hourOpts;
-document.getElementById("endHour").innerHTML = hourOpts;
-
-// ── 유틸 ──
-function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
-function fmtH(n){ return (Math.round(n*100)/100).toString(); }
-function ymd(d){
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-}
-function ym(s){ return s.slice(0,7); }
-
-// 수입 계산 함수
-function calcPay(entry) {
-  if (entry.actual_pay !== undefined && entry.actual_pay !== null && entry.actual_pay !== "") {
-    return Number(entry.actual_pay);
+// 🌟 화면 오류 감지기 (오류가 나면 화면에 빨갛게 이유를 알려줍니다)
+window.onerror = function(msg, url, line) {
+  const statusEl = document.getElementById("workStatus");
+  if(statusEl) {
+    statusEl.textContent = "오류 발생! " + msg + " (코드 복사가 끝까지 안 되었을 수 있습니다)";
+    statusEl.className = "status-bar err";
   }
-  return Number(entry.hours) * (Number(settings.wage) || 0);
-}
+};
 
-// 숫자 단축 입력 변환 (5.6 -> 56000)
-function handleMoneyInput(e) {
-  let val = parseFloat(e.target.value);
-  if (!isNaN(val) && val > 0 && val < 1000) {
-    e.target.value = val * 10000;
+if (typeof window.supabase === 'undefined') {
+  document.getElementById("workStatus").textContent = "연결 오류: Supabase 라이브러리를 불러오지 못했습니다. (인터넷 끊김 또는 광고 차단기 문제)";
+  document.getElementById("workStatus").className = "status-bar err";
+} else {
+
+  const SUPABASE_URL = "https://jzvwofjmfislljxofivk.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
+
+  const DAYS = ["일","월","화","수","목","금","토"];
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let settings = { wage:0, week_start:1 };
+  let workEntries = [];
+  let ledgerEntries = [];
+  let currentCalDate = new Date();
+
+  // 시(Hour) 드롭다운 초기화 세팅
+  let hourOpts = '<option value="">시</option>';
+  for(let i=0; i<24; i++){
+    let h = String(i).padStart(2, '0');
+    hourOpts += `<option value="${h}">${h}</option>`;
   }
-}
-document.getElementById("actualPay").addEventListener("blur", handleMoneyInput);
-document.getElementById("ledgerAmt").addEventListener("blur", handleMoneyInput);
+  document.getElementById("startHour").innerHTML = hourOpts;
+  document.getElementById("endHour").innerHTML = hourOpts;
 
-// 근무 유형 토글 함수
-function toggleWorkType() {
-  const type = document.getElementById("workType").value;
-  const hourlyFields = document.getElementById("hourlyFields");
-  const actualPayLabel = document.getElementById("actualPayLabel");
-  const payHintText = document.getElementById("payHintText");
-  
-  if (type === 'freelance') {
-    hourlyFields.style.display = 'none';
-    actualPayLabel.innerText = "정산 금액 (필수)";
-    payHintText.innerHTML = "* 시간 계산이 없으므로 정산받은 총 금액을 입력해주세요. (5.6 = 56000원)";
-  } else {
-    hourlyFields.style.display = 'flex';
-    actualPayLabel.innerText = "실제 받은 금액 (선택)";
-    payHintText.innerHTML = "* 비워두면 시급으로 계산됩니다. 시급과 다르게 받았다면 금액을 적어주세요.";
+  // 유틸리티
+  function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
+  function fmtH(n){ return (Math.round(n*100)/100).toString(); }
+  function ymd(d){
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }
-}
+  function ym(s){ return s.slice(0,7); }
 
-// 🌟 출퇴근 시간 계산 로직 (드롭다운 대응)
-function calcHours() {
-  const sh = document.getElementById("startHour").value;
-  const sm = document.getElementById("startMin").value;
-  const eh = document.getElementById("endHour").value;
-  const em = document.getElementById("endMin").value;
-  
-  if(sh && sm && eh && em) {
-    let diff = (Number(eh) + Number(em)/60) - (Number(sh) + Number(sm)/60);
-    if (diff < 0) diff += 24; // 자정 넘김 처리
-    document.getElementById("hours").value = diff.toFixed(1);
-  }
-}
-
-function setStatus(id, msg, isErr){
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.className = "status-bar" + (isErr ? " err" : "");
-}
-
-function switchTab(tab){
-  document.querySelectorAll(".tab-panel").forEach(p=> p.classList.remove("active"));
-  document.querySelectorAll(".tab-btn").forEach(b=> b.classList.remove("active"));
-  document.getElementById("tab-"+tab).classList.add("active");
-  event.currentTarget.classList.add("active");
-  if(tab==="ledger") renderLedger();
-}
-
-// ══════════════ 캘린더 렌더링 ══════════════
-function changeCalMonth(dir) {
-  currentCalDate.setMonth(currentCalDate.getMonth() + dir);
-  renderWork();
-}
-
-function renderCalendar() {
-  const y = currentCalDate.getFullYear();
-  const m = currentCalDate.getMonth();
-  document.getElementById("calTitle").textContent = `${y}년 ${m+1}월`;
-
-  const firstDay = new Date(y, m, 1).getDay();
-  const lastDate = new Date(y, m+1, 0).getDate();
-
-  let html = `
-    <div class="cal-header">일</div><div class="cal-header">월</div>
-    <div class="cal-header">화</div><div class="cal-header">수</div>
-    <div class="cal-header">목</div><div class="cal-header">금</div>
-    <div class="cal-header">토</div><div class="cal-header" style="background:var(--ink);color:#fff">주합계</div>
-  `;
-
-  const monthPrefix = `${y}-${String(m+1).padStart(2, '0')}`;
-  
-  const entriesMap = {};
-  workEntries.forEach(e => {
-    if (e.date.startsWith(monthPrefix)) {
-      entriesMap[e.date] = (entriesMap[e.date] || 0) + calcPay(e);
+  // 수입 계산 함수
+  function calcPay(entry) {
+    if (entry.actual_pay !== undefined && entry.actual_pay !== null && entry.actual_pay !== "") {
+      return Number(entry.actual_pay);
     }
-  });
+    return Number(entry.hours) * (Number(settings.wage) || 0);
+  }
 
-  let dayCount = 1; let weekPay = 0; let monthPay = 0; let cellCount = 0;
+  // 숫자 단축 입력 변환 (5.6 -> 56000)
+  function handleMoneyInput(e) {
+    let val = parseFloat(e.target.value);
+    if (!isNaN(val) && val > 0 && val < 1000) {
+      e.target.value = val * 10000;
+    }
+  }
+  document.getElementById("actualPay").addEventListener("blur", handleMoneyInput);
+  document.getElementById("ledgerAmt").addEventListener("blur", handleMoneyInput);
 
-  for (let i = 0; i < firstDay; i++) { html += `<div class="cal-cell cal-empty"></div>`; cellCount++; }
-
-  while (dayCount <= lastDate) {
-    const dateStr = `${monthPrefix}-${String(dayCount).padStart(2, '0')}`;
-    const dailyPay = entriesMap[dateStr] || 0;
+  // 근무 유형 토글 함수
+  function toggleWorkType() {
+    const type = document.getElementById("workType").value;
+    const hourlyFields = document.getElementById("hourlyFields");
+    const actualPayLabel = document.getElementById("actualPayLabel");
+    const payHintText = document.getElementById("payHintText");
     
-    weekPay += dailyPay; monthPay += dailyPay;
-    let payHtml = dailyPay > 0 ? `<div class="cal-amt">${won(dailyPay)}</div>` : '';
-    const isToday = (dateStr === ymd(new Date()));
-    const dayStyle = isToday ? 'background:var(--accent); color:#fff; border-radius:50%; width:18px; height:18px; display:flex; justify-content:center; align-items:center;' : '';
-
-    html += `<div class="cal-cell ${isToday ? 'cal-today' : ''}">
-                <div class="cal-day" style="${dayStyle}">${dayCount}</div>
-                ${payHtml}
-             </div>`;
-             
-    dayCount++; cellCount++;
-    if (cellCount % 7 === 0) { html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`; weekPay = 0; }
-  }
-
-  if (cellCount % 7 !== 0) {
-    const remaining = 7 - (cellCount % 7);
-    for (let i = 0; i < remaining; i++) { html += `<div class="cal-cell cal-empty"></div>`; }
-    html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`;
-  }
-
-  document.getElementById("calendarGrid").innerHTML = html;
-  document.getElementById("calMonthTotal").textContent = won(monthPay);
-}
-
-
-// ══════════════ 알바 탭 ══════════════
-function renderWork(){
-  document.getElementById("wage").value = settings.wage||"";
-  document.getElementById("weekStart").value = settings.week_start;
-
-  renderCalendar();
-
-  const list = [...workEntries].sort((a,b)=> a.date<b.date?1:-1);
-  const totH = list.filter(e=> e.work_type!=='freelance').reduce((s,e)=>s+Number(e.hours||0),0);
-  const totPay = list.reduce((s,e)=>s+calcPay(e), 0);
-
-  document.getElementById("totHours").textContent = fmtH(totH);
-  document.getElementById("totPay").textContent = won(totPay);
-  document.getElementById("workCntTag").textContent = list.length+"건";
-
-  const da = document.getElementById("dailyArea");
-  if(!list.length){ da.innerHTML='<p class="empty">아직 기록이 없습니다.</p>'; }
-  else{
-    let h='<table><thead><tr><th>날짜</th><th>요일</th><th>내역 / 시간</th><th class="num">급여</th><th></th></tr></thead><tbody>';
-    for(const e of list){
-      const d=new Date(e.date+"T00:00:00");
-      const pay = calcPay(e);
-      
-      let detailHtml = '';
-      let isManualPay = (e.actual_pay !== undefined && e.actual_pay !== null && e.actual_pay !== "");
-
-      if (e.work_type === 'freelance') {
-        detailHtml = `<span style="color:var(--accent);font-weight:700;font-size:12px;">[전화/건별]</span><br><span style="font-size:12px;color:var(--ink-soft)">${e.note || '내용 없음'}</span>`;
-      } else {
-        let timeStr = (e.start_time && e.end_time) ? `<span style="font-size:11px;color:var(--ink-soft)">${e.start_time.slice(0,5)}~${e.end_time.slice(0,5)}</span><br>` : '';
-        let noteStr = e.note ? `<br><span style="font-size:11px;color:var(--ink-soft)">${e.note}</span>` : '';
-        detailHtml = `${timeStr}<b>${fmtH(Number(e.hours))}</b><small>시간</small>${noteStr}`;
-      }
-
-      const payDisplay = isManualPay && e.work_type !== 'freelance' ? `<span style="color:var(--accent);font-size:11px">직접입력</span><br>${won(pay)}` : won(pay);
-
-      h+=`<tr><td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
-          <td>${detailHtml}</td>
-          <td class="num money">${payDisplay}</td>
-          <td><button class="del" data-id="${e.id}">삭제</button></td></tr>`;
+    if (type === 'freelance') {
+      hourlyFields.style.display = 'none';
+      actualPayLabel.innerText = "정산 금액 (필수)";
+      payHintText.innerHTML = "* 시간 계산이 없으므로 정산받은 총 금액을 입력해주세요. (5.6 = 56000원)";
+    } else {
+      hourlyFields.style.display = 'flex';
+      actualPayLabel.innerText = "실제 받은 금액 (선택)";
+      payHintText.innerHTML = "* 비워두면 시급으로 계산됩니다. 시급과 다르게 받았다면 금액을 적어주세요.";
     }
-    da.innerHTML=h+'</tbody></table>';
-    da.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteWork(b.dataset.id));
-  }
-}
-
-// ══════════════ 가계부 탭 ══════════════
-function renderLedger(){
-  const month = document.getElementById("ledgerMonth").value;
-
-  const workIncome = workEntries
-    .filter(e=> ym(e.date)===month)
-    .reduce((s,e)=> s + calcPay(e), 0);
-
-  const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
-  const totalExpense = monthLedger.reduce((s,e)=> s+Number(e.amount), 0);
-  const totalIncome = workIncome;
-  const balance = totalIncome - totalExpense;
-
-  document.getElementById("sumIncome").textContent = won(totalIncome);
-  document.getElementById("sumExpense").textContent = won(totalExpense);
-  document.getElementById("sumBalance").textContent = won(balance);
-  document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
-
-  const workRows = workEntries
-    .filter(e=> ym(e.date)===month)
-    .map(e=>({
-      id: "w-"+e.id,
-      date: e.date,
-      type: "income",
-      category: e.work_type === 'freelance' ? "건별/전화 수익" : "알바 수입",
-      amount: calcPay(e),
-      note: e.work_type === 'freelance' ? (e.note || "건별 정산") : (fmtH(Number(e.hours))+"시간 근무 " + (e.note||"")),
-      deletable: false
-    }));
-    
-  const expRows = monthLedger.map(e=>({
-    id: e.id,
-    date: e.entry_date,
-    type: "expense",
-    category: e.category,
-    amount: Number(e.amount),
-    note: e.note||"",
-    deletable: true
-  }));
-  const allRows = [...workRows, ...expRows].sort((a,b)=> a.date<b.date?1:-1);
-
-  const la = document.getElementById("ledgerArea");
-  if(!allRows.length){ la.innerHTML='<p class="empty">이번 달 내역이 없습니다.</p>'; }
-  else{
-    let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
-    for(const r of allRows){
-      const d=new Date(r.date+"T00:00:00");
-      const badge = r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>';
-      const amtColor = r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700";
-      const delBtn = r.deletable ? `<button class="del" data-id="${r.id}">삭제</button>` : "";
-      
-      h+=`<tr>
-        <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
-        <td>${badge}</td>
-        <td class="cat">${r.category}</td>
-        <td class="num" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
-        <td style="font-size:13px;color:var(--ink-soft)">${r.note}</td>
-        <td>${delBtn}</td>
-      </tr>`;
-    }
-    la.innerHTML=h+'</tbody></table>';
-    la.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteLedger(b.dataset.id));
   }
 
-  const catMap={};
-  for(const e of monthLedger){ catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); }
-  const catArea=document.getElementById("catArea");
-  const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
-  if(!cats.length){ catArea.innerHTML='<p class="empty">지출 내역이 없습니다.</p>'; }
-  else{
-    catArea.innerHTML=cats.map(([cat,amt])=>`
-      <div class="period-row">
-        <div class="label">${cat}</div>
-        <div class="amt">${won(amt)}원</div>
-      </div>`).join("");
-  }
-}
-
-// ══════════════ Supabase CRUD ══════════════
-async function loadAll(){
-  try{
-    const {data:sd, error:se} = await sb.from("app_settings").select("*").eq("id",1).single();
-    if(se) throw se;
-    if(sd) settings=sd;
-
-    const {data:wd, error:we} = await sb.from("work_entries").select("*");
-    if(we) throw we;
-    workEntries = wd||[];
-
-    const {data:ld, error:le} = await sb.from("ledger_entries").select("*");
-    if(le) throw le;
-    ledgerEntries = ld||[];
-
-    setStatus("workStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
-    setStatus("ledgerStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
-    renderWork();
-    renderLedger();
-  }catch(err){
-    setStatus("workStatus","연결 오류: "+(err.message||err), true);
-    setStatus("ledgerStatus","연결 오류: "+(err.message||err), true);
-  }
-}
-
-async function addWork(){
-  const type = document.getElementById("workType").value;
-  const date = document.getElementById("workDate").value;
-  const note = document.getElementById("workNote").value.trim();
-  const actualPayInput = document.getElementById("actualPay").value;
-  
-  if(!date){alert("날짜를 선택하세요.");return;}
-  
-  const btn = document.getElementById("addWorkBtn"); 
-  btn.disabled = true;
-  
-  let hours = 0;
-  let start_time = null;
-  let end_time = null;
-
-  if (type === 'hourly') {
-    hours = parseFloat(document.getElementById("hours").value);
+  // 출퇴근 시간 계산 로직
+  function calcHours() {
     const sh = document.getElementById("startHour").value;
     const sm = document.getElementById("startMin").value;
     const eh = document.getElementById("endHour").value;
     const em = document.getElementById("endMin").value;
     
-    if(sh && sm) start_time = `${sh}:${sm}`;
-    if(eh && em) end_time = `${eh}:${em}`;
-    
-    if(!hours || hours <= 0){alert("근무 시간을 올바르게 입력하세요."); btn.disabled = false; return;}
-  } else {
-    if(!actualPayInput){alert("정산 금액을 입력해주세요."); btn.disabled = false; return;}
+    if(sh && sm && eh && em) {
+      let diff = (Number(eh) + Number(em)/60) - (Number(sh) + Number(sm)/60);
+      if (diff < 0) diff += 24; // 자정 넘김 처리
+      document.getElementById("hours").value = diff.toFixed(1);
+    }
   }
 
-  try{
-    const insertData = { 
-      date, 
-      hours,
-      work_type: type,
-      note: note,
-      start_time: start_time,
-      end_time: end_time
-    };
+  function setStatus(id, msg, isErr){
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = "status-bar" + (isErr ? " err" : "");
+  }
 
-    if(actualPayInput) {
-      insertData.actual_pay = parseFloat(actualPayInput);
+  function switchTab(tab){
+    document.querySelectorAll(".tab-panel").forEach(p=> p.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach(b=> b.classList.remove("active"));
+    document.getElementById("tab-"+tab).classList.add("active");
+    event.currentTarget.classList.add("active");
+    if(tab==="ledger") renderLedger();
+  }
+
+  // 캘린더 렌더링
+  function changeCalMonth(dir) {
+    currentCalDate.setMonth(currentCalDate.getMonth() + dir);
+    renderWork();
+  }
+
+  function renderCalendar() {
+    const y = currentCalDate.getFullYear();
+    const m = currentCalDate.getMonth();
+    document.getElementById("calTitle").textContent = `${y}년 ${m+1}월`;
+
+    const firstDay = new Date(y, m, 1).getDay();
+    const lastDate = new Date(y, m+1, 0).getDate();
+
+    let html = `
+      <div class="cal-header">일</div><div class="cal-header">월</div>
+      <div class="cal-header">화</div><div class="cal-header">수</div>
+      <div class="cal-header">목</div><div class="cal-header">금</div>
+      <div class="cal-header">토</div><div class="cal-header" style="background:var(--ink);color:#fff">주합계</div>
+    `;
+
+    const monthPrefix = `${y}-${String(m+1).padStart(2, '0')}`;
+    
+    const entriesMap = {};
+    workEntries.forEach(e => {
+      if (e.date.startsWith(monthPrefix)) {
+        entriesMap[e.date] = (entriesMap[e.date] || 0) + calcPay(e);
+      }
+    });
+
+    let dayCount = 1; let weekPay = 0; let monthPay = 0; let cellCount = 0;
+
+    for (let i = 0; i < firstDay; i++) { html += `<div class="cal-cell cal-empty"></div>`; cellCount++; }
+
+    while (dayCount <= lastDate) {
+      const dateStr = `${monthPrefix}-${String(dayCount).padStart(2, '0')}`;
+      const dailyPay = entriesMap[dateStr] || 0;
+      
+      weekPay += dailyPay; monthPay += dailyPay;
+      let payHtml = dailyPay > 0 ? `<div class="cal-amt">${won(dailyPay)}</div>` : '';
+      const isToday = (dateStr === ymd(new Date()));
+      const dayStyle = isToday ? 'background:var(--accent); color:#fff; border-radius:50%; width:18px; height:18px; display:flex; justify-content:center; align-items:center;' : '';
+
+      html += `<div class="cal-cell ${isToday ? 'cal-today' : ''}">
+                  <div class="cal-day" style="${dayStyle}">${dayCount}</div>
+                  ${payHtml}
+               </div>`;
+               
+      dayCount++; cellCount++;
+      if (cellCount % 7 === 0) { html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`; weekPay = 0; }
     }
 
-    const {error} = await sb.from("work_entries").insert(insertData);
-    if(error) throw error;
-    
-    // 폼 초기화
-    document.getElementById("hours").value = "";
-    document.getElementById("startHour").value = "";
-    document.getElementById("startMin").value = "";
-    document.getElementById("endHour").value = "";
-    document.getElementById("endMin").value = "";
-    document.getElementById("actualPay").value = "";
-    document.getElementById("workNote").value = "";
-    
-    await loadAll();
-  }catch(err){ 
-    setStatus("workStatus","저장 실패: "+(err.message||err) + " (SQL 쿼리를 실행했는지 확인해주세요!)",true); 
+    if (cellCount % 7 !== 0) {
+      const remaining = 7 - (cellCount % 7);
+      for (let i = 0; i < remaining; i++) { html += `<div class="cal-cell cal-empty"></div>`; }
+      html += `<div class="cal-week-total">${weekPay > 0 ? won(weekPay) : ''}</div>`;
+    }
+
+    document.getElementById("calendarGrid").innerHTML = html;
+    document.getElementById("calMonthTotal").textContent = won(monthPay);
   }
-  finally{ btn.disabled=false; }
+
+  // 알바 탭 데이터 렌더링
+  function renderWork(){
+    document.getElementById("wage").value = settings.wage||"";
+    document.getElementById("weekStart").value = settings.week_start;
+
+    renderCalendar();
+
+    const list = [...workEntries].sort((a,b)=> a.date<b.date?1:-1);
+    const totH = list.filter(e=> e.work_type!=='freelance').reduce((s,e)=>s+Number(e.hours||0),0);
+    const totPay = list.reduce((s,e)=>s+calcPay(e), 0);
+
+    document.getElementById("totHours").textContent = fmtH(totH);
+    document.getElementById("totPay").textContent = won(totPay);
+    document.getElementById("workCntTag").textContent = list.length+"건";
+
+    const da = document.getElementById("dailyArea");
+    if(!list.length){ da.innerHTML='<p class="empty">아직 기록이 없습니다.</p>'; }
+    else{
+      let h='<table><thead><tr><th>날짜</th><th>요일</th><th>내역 / 시간</th><th class="num">급여</th><th></th></tr></thead><tbody>';
+      for(const e of list){
+        const d=new Date(e.date+"T00:00:00");
+        const pay = calcPay(e);
+        
+        let detailHtml = '';
+        let isManualPay = (e.actual_pay !== undefined && e.actual_pay !== null && e.actual_pay !== "");
+
+        if (e.work_type === 'freelance') {
+          detailHtml = `<span style="color:var(--accent);font-weight:700;font-size:12px;">[전화/건별]</span><br><span style="font-size:12px;color:var(--ink-soft)">${e.note || '내용 없음'}</span>`;
+        } else {
+          let timeStr = (e.start_time && e.end_time) ? `<span style="font-size:11px;color:var(--ink-soft)">${e.start_time.slice(0,5)}~${e.end_time.slice(0,5)}</span><br>` : '';
+          let noteStr = e.note ? `<br><span style="font-size:11px;color:var(--ink-soft)">${e.note}</span>` : '';
+          detailHtml = `${timeStr}<b>${fmtH(Number(e.hours))}</b><small>시간</small>${noteStr}`;
+        }
+
+        const payDisplay = isManualPay && e.work_type !== 'freelance' ? `<span style="color:var(--accent);font-size:11px">직접입력</span><br>${won(pay)}` : won(pay);
+
+        h+=`<tr><td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
+            <td>${detailHtml}</td>
+            <td class="num money">${payDisplay}</td>
+            <td><button class="del" data-id="${e.id}">삭제</button></td></tr>`;
+      }
+      da.innerHTML=h+'</tbody></table>';
+      da.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteWork(b.dataset.id));
+    }
+  }
+
+  // 가계부 탭 렌더링
+  function renderLedger(){
+    const month = document.getElementById("ledgerMonth").value;
+
+    const workIncome = workEntries
+      .filter(e=> ym(e.date)===month)
+      .reduce((s,e)=> s + calcPay(e), 0);
+
+    const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
+    const totalExpense = monthLedger.reduce((s,e)=> s+Number(e.amount), 0);
+    const totalIncome = workIncome;
+    const balance = totalIncome - totalExpense;
+
+    document.getElementById("sumIncome").textContent = won(totalIncome);
+    document.getElementById("sumExpense").textContent = won(totalExpense);
+    document.getElementById("sumBalance").textContent = won(balance);
+    document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
+
+    const workRows = workEntries
+      .filter(e=> ym(e.date)===month)
+      .map(e=>({
+        id: "w-"+e.id,
+        date: e.date,
+        type: "income",
+        category: e.work_type === 'freelance' ? "건별/전화 수익" : "알바 수입",
+        amount: calcPay(e),
+        note: e.work_type === 'freelance' ? (e.note || "건별 정산") : (fmtH(Number(e.hours))+"시간 근무 " + (e.note||"")),
+        deletable: false
+      }));
+      
+    const expRows = monthLedger.map(e=>({
+      id: e.id,
+      date: e.entry_date,
+      type: "expense",
+      category: e.category,
+      amount: Number(e.amount),
+      note: e.note||"",
+      deletable: true
+    }));
+    const allRows = [...workRows, ...expRows].sort((a,b)=> a.date<b.date?1:-1);
+
+    const la = document.getElementById("ledgerArea");
+    if(!allRows.length){ la.innerHTML='<p class="empty">이번 달 내역이 없습니다.</p>'; }
+    else{
+      let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
+      for(const r of allRows){
+        const d=new Date(r.date+"T00:00:00");
+        const badge = r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>';
+        const amtColor = r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700";
+        const delBtn = r.deletable ? `<button class="del" data-id="${r.id}">삭제</button>` : "";
+        
+        h+=`<tr>
+          <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
+          <td>${badge}</td>
+          <td class="cat">${r.category}</td>
+          <td class="num" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
+          <td style="font-size:13px;color:var(--ink-soft)">${r.note}</td>
+          <td>${delBtn}</td>
+        </tr>`;
+      }
+      la.innerHTML=h+'</tbody></table>';
+      la.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteLedger(b.dataset.id));
+    }
+
+    const catMap={};
+    for(const e of monthLedger){ catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); }
+    const catArea=document.getElementById("catArea");
+    const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+    if(!cats.length){ catArea.innerHTML='<p class="empty">지출 내역이 없습니다.</p>'; }
+    else{
+      catArea.innerHTML=cats.map(([cat,amt])=>`
+        <div class="period-row">
+          <div class="label">${cat}</div>
+          <div class="amt">${won(amt)}원</div>
+        </div>`).join("");
+    }
+  }
+
+  // Supabase 통신
+  async function loadAll(){
+    try{
+      const {data:sd, error:se} = await sb.from("app_settings").select("*").eq("id",1).single();
+      if(se) throw se;
+      if(sd) settings=sd;
+
+      const {data:wd, error:we} = await sb.from("work_entries").select("*");
+      if(we) throw we;
+      workEntries = wd||[];
+
+      const {data:ld, error:le} = await sb.from("ledger_entries").select("*");
+      if(le) throw le;
+      ledgerEntries = ld||[];
+
+      setStatus("workStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
+      setStatus("ledgerStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
+      renderWork();
+      renderLedger();
+    }catch(err){
+      setStatus("workStatus","연결 오류: "+(err.message||err), true);
+      setStatus("ledgerStatus","연결 오류: "+(err.message||err), true);
+    }
+  }
+
+  async function addWork(){
+    const type = document.getElementById("workType").value;
+    const date = document.getElementById("workDate").value;
+    const note = document.getElementById("workNote").value.trim();
+    const actualPayInput = document.getElementById("actualPay").value;
+    
+    if(!date){alert("날짜를 선택하세요.");return;}
+    
+    const btn = document.getElementById("addWorkBtn"); 
+    btn.disabled = true;
+    
+    let hours = 0;
+    let start_time = null;
+    let end_time = null;
+
+    if (type === 'hourly') {
+      hours = parseFloat(document.getElementById("hours").value);
+      const sh = document.getElementById("startHour").value;
+      const sm = document.getElementById("startMin").value;
+      const eh = document.getElementById("endHour").value;
+      const em = document.getElementById("endMin").value;
+      
+      if(sh && sm) start_time = `${sh}:${sm}`;
+      if(eh && em) end_time = `${eh}:${em}`;
+      
+      if(!hours || hours <= 0){alert("근무 시간을 올바르게 입력하세요."); btn.disabled = false; return;}
+    } else {
+      if(!actualPayInput){alert("정산 금액을 입력해주세요."); btn.disabled = false; return;}
+    }
+
+    try{
+      const insertData = { 
+        date, 
+        hours,
+        work_type: type,
+        note: note,
+        start_time: start_time,
+        end_time: end_time
+      };
+
+      if(actualPayInput) {
+        insertData.actual_pay = parseFloat(actualPayInput);
+      }
+
+      const {error} = await sb.from("work_entries").insert(insertData);
+      if(error) throw error;
+      
+      document.getElementById("hours").value = "";
+      document.getElementById("startHour").value = "";
+      document.getElementById("startMin").value = "";
+      document.getElementById("endHour").value = "";
+      document.getElementById("endMin").value = "";
+      document.getElementById("actualPay").value = "";
+      document.getElementById("workNote").value = "";
+      
+      await loadAll();
+    }catch(err){ 
+      setStatus("workStatus","저장 실패: "+(err.message||err) + " (SQL 쿼리를 실행했는지 확인해주세요!)",true); 
+    }
+    finally{ btn.disabled=false; }
+  }
+
+  async function deleteWork(id){
+    try{
+      const {error}=await sb.from("work_entries").delete().eq("id",id);
+      if(error) throw error;
+      await loadAll();
+    }catch(err){ setStatus("workStatus","삭제 실패: "+(err.message||err),true); }
+  }
+
+  async function addLedger(){
+    const entry_date=document.getElementById("ledgerDate").value;
+    const category=document.getElementById("ledgerCat").value;
+    const amount=parseFloat(document.getElementById("ledgerAmt").value);
+    const note=document.getElementById("ledgerNote").value.trim();
+    if(!entry_date){alert("날짜를 선택하세요.");return;}
+    if(!amount||amount<=0){alert("금액을 올바르게 입력하세요.");return;}
+    const btn=document.getElementById("addLedgerBtn"); btn.disabled=true;
+    try{
+      const {error}=await sb.from("ledger_entries").insert({entry_date,type:"expense",category,amount,note});
+      if(error) throw error;
+      document.getElementById("ledgerAmt").value="";
+      document.getElementById("ledgerNote").value="";
+      await loadAll();
+    }catch(err){ setStatus("ledgerStatus","저장 실패: "+(err.message||err),true); }
+    finally{ btn.disabled=false; }
+  }
+
+  async function deleteLedger(id){
+    try{
+      const {error}=await sb.from("ledger_entries").delete().eq("id",id);
+      if(error) throw error;
+      await loadAll();
+    }catch(err){ setStatus("ledgerStatus","삭제 실패: "+(err.message||err),true); }
+  }
+
+  let hintTimer;
+  async function saveSettings(patch){
+    try{
+      const {error}=await sb.from("app_settings").update(patch).eq("id",1);
+      if(error) throw error;
+      Object.assign(settings,patch);
+      const h=document.getElementById("savedHint");
+      h.textContent="저장됨";
+      clearTimeout(hintTimer);
+      hintTimer=setTimeout(()=>h.textContent="",1500);
+      renderWork();
+    }catch(err){ setStatus("workStatus","설정 저장 실패: "+(err.message||err),true); }
+  }
+
+  // 기본 이벤트 연결
+  document.getElementById("addWorkBtn").onclick = addWork;
+  document.getElementById("addLedgerBtn").onclick = addLedger;
+  document.getElementById("wage").onchange = e=> saveSettings({wage:parseFloat(e.target.value)||0});
+  document.getElementById("weekStart").onchange = e=> saveSettings({week_start:parseInt(e.target.value)});
+
+  // 초기 날짜 세팅
+  const today=ymd(new Date());
+  document.getElementById("workDate").value=today;
+  document.getElementById("ledgerDate").value=today;
+  document.getElementById("ledgerMonth").value=today.slice(0,7);
+
+  // 최종 데이터 로드
+  loadAll();
 }
-
-async function deleteWork(id){
-  try{
-    const {error}=await sb.from("work_entries").delete().eq("id",id);
-    if(error) throw error;
-    await loadAll();
-  }catch(err){ setStatus("workStatus","삭제 실패: "+(err.message||err),true); }
-}
-
-async function addLedger(){
-  const entry_date=document.getElementById("ledgerDate").value;
-  const category=document.getElementById("ledgerCat").value;
-  const amount=parseFloat(document.getElementById("ledgerAmt").value);
-  const note=document.getElementById("ledgerNote").value.trim();
-  if(!entry_date){alert("날짜를 선택하세요.");return;}
-  if(!amount||amount<=0){alert("금액을 올바르게 입력하세요.");return;}
-  const btn=document.getElementById("addLedgerBtn"); btn.disabled=true;
-  try{
-    const {error}=await sb.from("ledger_entries").insert({entry_date,type:"expense",category,amount,note});
-    if(error) throw error;
-    document.getElementById("ledgerAmt").value="";
-    document.getElementById("ledgerNote").value="";
-    await loadAll();
-  }catch(err){ setStatus("ledgerStatus","저장 실패: "+(err.message||err),true); }
-  finally{ btn.disabled=false; }
-}
-
-async function deleteLedger(id){
-  try{
-    const {error}=await sb.from("ledger_entries").delete().eq("id",id);
-    if(error) throw error;
-    await loadAll();
-  }catch(err){ setStatus("ledgerStatus","삭제 실패: "+(err.message||err),true); }
-}
-
-let hintTimer;
-async function saveSettings(patch){
-  try{
-    const {error}=await sb.from("app_settings").update(patch).eq("id",1);
-    if(error) throw error;
-    Object.assign(settings,patch);
-    const h=document.getElementById("savedHint");
-    h.textContent="저장됨";
-    clearTimeout(hintTimer);
-    hintTimer=setTimeout(()=>h.textContent="",1500);
-    renderWork();
-  }catch(err){ setStatus("workStatus","설정 저장 실패: "+(err.message||err),true); }
-}
-
-// ── 이벤트 연결 ──
-document.getElementById("addWorkBtn").onclick = addWork;
-document.getElementById("addLedgerBtn").onclick = addLedger;
-document.getElementById("wage").onchange = e=> saveSettings({wage:parseFloat(e.target.value)||0});
-document.getElementById("weekStart").onchange = e=> saveSettings({week_start:parseInt(e.target.value)});
-
-// 초기값
-const today=ymd(new Date());
-document.getElementById("workDate").value=today;
-document.getElementById("ledgerDate").value=today;
-document.getElementById("ledgerMonth").value=today.slice(0,7);
-
-loadAll();
 </script>
 </body>
 </html>
