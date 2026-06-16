@@ -128,6 +128,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   font-weight: 700; font-size: 11px; border-radius: 6px; word-break: break-all; padding: 0 2px;
 }
 .cal-nav-btn { padding: 4px 10px; font-size: 12px; }
+
+/* 시간 선택 드롭다운용 플렉스박스 */
+.time-select-group { display: flex; gap: 4px; align-items: center; }
+.time-select-group select { padding: 8px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -193,14 +197,36 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div class="row" id="hourlyFields">
       <div class="field">
         <label>출근 시간</label>
-        <input type="time" id="startTime" step="600" onchange="calcHours()">
+        <div class="time-select-group">
+          <select id="startHour" onchange="calcHours()"></select> :
+          <select id="startMin" onchange="calcHours()">
+            <option value="">분</option>
+            <option value="00">00</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
+          </select>
+        </div>
       </div>
       <div class="field">
         <label>퇴근 시간</label>
-        <input type="time" id="endTime" step="600" onchange="calcHours()">
+        <div class="time-select-group">
+          <select id="endHour" onchange="calcHours()"></select> :
+          <select id="endMin" onchange="calcHours()">
+            <option value="">분</option>
+            <option value="00">00</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
+          </select>
+        </div>
       </div>
       <div class="field">
-        <label for="hours">근무 시간 (자동계산 가능)</label>
+        <label for="hours">근무 시간 (자동계산)</label>
         <input type="number" id="hours" min="0" step="0.5" placeholder="예: 4.5">
       </div>
     </div>
@@ -208,7 +234,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div class="row">
       <div class="field">
         <label id="actualPayLabel" for="actualPay">실제 받은 금액 (선택)</label>
-        <input type="number" id="actualPay" min="0" placeholder="예: 5.6 입력 시 56000원으로 자동 변환">
+        <input type="number" id="actualPay" min="0" placeholder="예: 5.6 입력 시 56000원으로 변환">
       </div>
       <div class="field">
         <label for="workNote">메모 / 내용 (선택)</label>
@@ -227,4 +253,34 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <h2>전체 요약 <span class="tag" id="workCntTag">0건</span></h2>
     <div class="summary-grid">
       <div class="stat s-accent"><div class="k">총 근무 시간 (시간제)</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
-      <div class="stat s
+      <div class="stat s-accent"><div class="k">총 급여 (전체 합계)</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>일별 기록</h2>
+    <div id="dailyArea"><p class="empty">불러오는 중...</p></div>
+  </div>
+</div>
+</div>
+
+<div class="tab-panel" id="tab-ledger">
+<div class="wrap">
+  <h1 style="margin-top:8px">가계부</h1>
+  <p class="sub">알바 수입은 자동으로 반영됩니다. 지출 항목을 직접 추가해 보세요.</p>
+  <div class="status-bar" id="ledgerStatus">연결 중...</div>
+
+  <div class="month-filter">
+    <label style="margin:0;white-space:nowrap">월 선택</label>
+    <input type="month" id="ledgerMonth">
+    <button class="btn-ghost" onclick="renderLedger()">적용</button>
+  </div>
+
+  <div class="card">
+    <h2>이번 달 요약</h2>
+    <div class="summary-grid">
+      <div class="stat s-income"><div class="k">수입 (알바 포함)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
+      <div class="stat s-expense"><div class="k">지출</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
+      <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
+    </div>
+  </div>
