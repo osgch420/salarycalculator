@@ -3,91 +3,135 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>알바 급여 계산기 (클라우드 저장)</title>
+<title>알바 & 가계부</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  :root{
-    --paper:#f7f6f2; --ink:#1f2328; --ink-soft:#5b6068;
-    --line:#e2e0d8; --line-strong:#cfccc1;
-    --accent:#1d6b5f; --accent-soft:#e6f0ee;
-    --money:#9a5b1a; --danger:#b23b3b; --card:#ffffff;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{
-    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
-    background:var(--paper); color:var(--ink); line-height:1.5;
-    padding:24px 16px 80px; -webkit-font-smoothing:antialiased;
-  }
-  .wrap{max-width:840px;margin:0 auto}
-  h1{font-size:26px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px}
-  .sub{color:var(--ink-soft);font-size:14px;margin-bottom:16px}
+:root{
+  --paper:#f7f6f2; --ink:#1f2328; --ink-soft:#5b6068;
+  --line:#e2e0d8; --line-strong:#cfccc1;
+  --accent:#1d6b5f; --accent-soft:#e6f0ee;
+  --money:#9a5b1a; --income:#1d6b5f; --expense:#b23b3b;
+  --danger:#b23b3b; --card:#ffffff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  background:var(--paper); color:var(--ink); line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
 
-  .status{
-    font-size:13px;font-weight:600;border-radius:9px;padding:10px 14px;margin-bottom:20px;
-    background:var(--accent-soft);color:var(--accent);
-  }
-  .status.err{background:#fbeaea;color:var(--danger)}
-  .status.warn{background:#fdf3e3;color:#9a5b1a}
+/* ── 탭 네비 ── */
+.tab-nav{
+  display:flex; background:var(--card); border-bottom:2px solid var(--line);
+  position:sticky; top:0; z-index:100;
+}
+.tab-btn{
+  flex:1; padding:14px 8px; font-size:15px; font-weight:700;
+  border:none; background:none; color:var(--ink-soft); cursor:pointer;
+  border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s;
+}
+.tab-btn.active{color:var(--accent); border-bottom-color:var(--accent)}
+.tab-btn:hover:not(.active){background:var(--accent-soft)}
 
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px}
-  .card h2{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-  .tag{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:20px}
+.tab-panel{display:none; padding:24px 16px 80px}
+.tab-panel.active{display:block}
+.wrap{max-width:840px;margin:0 auto}
 
-  label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
-  input[type=number],input[type=date],select{
-    width:100%;padding:10px 12px;font-size:15px;font-family:inherit;
-    border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink);
-  }
-  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+h1{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px}
+.sub{color:var(--ink-soft);font-size:14px;margin-bottom:16px}
 
-  .row{display:flex;gap:12px;flex-wrap:wrap}
-  .row .field{flex:1;min-width:120px}
+.status-bar{
+  font-size:13px;font-weight:600;border-radius:9px;padding:10px 14px;margin-bottom:20px;
+  background:var(--accent-soft);color:var(--accent);
+}
+.status-bar.err{background:#fbeaea;color:var(--danger)}
 
-  button{
-    font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;border:none;border-radius:9px;
-    padding:11px 18px;background:var(--accent);color:#fff;transition:filter .12s;
-  }
-  button:hover{filter:brightness(1.08)}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-  .btn-add{width:100%;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px}
+.card h2{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.tag{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:20px}
 
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line)}
-  th{font-size:12px;font-weight:700;color:var(--ink-soft)}
-  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-  .money{color:var(--money);font-weight:700;font-variant-numeric:tabular-nums}
-  .del{background:none;color:var(--danger);padding:4px 8px;font-size:13px;border:1px solid var(--line-strong);border-radius:7px;font-weight:600}
-  .del:hover{background:#fbeaea;filter:none}
+label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+input[type=number],input[type=date],input[type=text],select,textarea{
+  width:100%;padding:10px 12px;font-size:15px;font-family:inherit;
+  border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
 
-  .empty{color:var(--ink-soft);font-size:14px;padding:18px 0;text-align:center}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row .field{flex:1;min-width:120px}
 
-  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
-  .stat{background:var(--accent);color:#fff;border-radius:11px;padding:16px}
-  .stat .k{font-size:12px;opacity:.85;font-weight:600;margin-bottom:6px}
-  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
-  .stat .v small{font-size:13px;font-weight:600;opacity:.85}
+button{
+  font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;border:none;border-radius:9px;
+  padding:11px 18px;background:var(--accent);color:#fff;transition:filter .12s;
+}
+button:hover{filter:brightness(1.08)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.btn-full{width:100%;margin-top:4px}
+.btn-ghost{background:#fff;color:var(--accent);border:1px solid var(--line-strong)}
+.btn-ghost:hover{background:var(--accent-soft);filter:none}
 
-  .period-row{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
-  .period-row:last-child{border-bottom:none}
-  .period-row .label{font-weight:600}
-  .period-row .meta{color:var(--ink-soft);font-size:13px}
-  .period-row .amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--money)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-size:12px;font-weight:700;color:var(--ink-soft)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.money{color:var(--money);font-weight:700;font-variant-numeric:tabular-nums}
+.del{background:none;color:var(--danger);padding:4px 8px;font-size:13px;
+  border:1px solid var(--line-strong);border-radius:7px;font-weight:600}
+.del:hover{background:#fbeaea;filter:none}
 
-  .wage-line{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
-  .wage-line .field{flex:1;min-width:160px}
-  .saved-hint{font-size:12px;color:var(--accent);font-weight:600;height:16px}
+.empty{color:var(--ink-soft);font-size:14px;padding:18px 0;text-align:center}
+
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{border-radius:11px;padding:16px}
+.stat.s-accent{background:var(--accent);color:#fff}
+.stat.s-income{background:#e6f0ee;color:var(--income)}
+.stat.s-expense{background:#fbeaea;color:var(--expense)}
+.stat.s-balance{background:#1f2328;color:#fff}
+.stat .k{font-size:12px;opacity:.85;font-weight:600;margin-bottom:6px}
+.stat .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat .v small{font-size:12px;font-weight:600;opacity:.85}
+
+.period-row{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.period-row:last-child{border-bottom:none}
+.period-row .label{font-weight:600}
+.period-row .meta{color:var(--ink-soft);font-size:13px}
+.period-row .amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--money)}
+
+.saved-hint{font-size:12px;color:var(--accent);font-weight:600;height:16px;margin-top:6px}
+
+/* 가계부 배지 */
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
+.badge-in{background:#e6f0ee;color:var(--income)}
+.badge-ex{background:#fbeaea;color:var(--expense)}
+
+/* 월 필터 */
+.month-filter{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.month-filter input[type=month]{width:auto;padding:8px 10px;font-size:14px}
+.month-filter button{padding:8px 14px;font-size:14px}
+
+/* 카테고리 색 */
+.cat{font-size:12px;font-weight:600;color:var(--ink-soft)}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>알바 급여 계산기</h1>
-  <p class="sub">근무 날짜와 시간을 입력하면 일별·주별·월별 급여가 자동으로 계산됩니다. 기록은 클라우드에 저장되어 어느 노트북에서 열어도 같이 보입니다.</p>
 
-  <div class="status" id="status">연결 준비 중...</div>
+<!-- 탭 네비게이션 -->
+<nav class="tab-nav">
+  <button class="tab-btn active" onclick="switchTab('work')">💼 알바 계산기</button>
+  <button class="tab-btn" onclick="switchTab('ledger')">📒 가계부</button>
+</nav>
+
+<!-- ═══════════════════════════════ 알바 탭 ═══════════════════════════════ -->
+<div class="tab-panel active" id="tab-work">
+<div class="wrap">
+  <h1 style="margin-top:8px">알바 계산기</h1>
+  <p class="sub">근무 날짜와 시간을 입력하면 일별·주별·월별 급여가 자동으로 계산됩니다.</p>
+  <div class="status-bar" id="workStatus">연결 중...</div>
 
   <div class="card">
     <h2>시급 설정</h2>
-    <div class="wage-line">
+    <div class="row">
       <div class="field">
         <label for="wage">시급 (원)</label>
         <input type="number" id="wage" min="0" step="10" placeholder="예: 10030">
@@ -107,22 +151,22 @@
     <h2>근무 기록 추가</h2>
     <div class="row">
       <div class="field">
-        <label for="date">날짜</label>
-        <input type="date" id="date">
+        <label for="workDate">날짜</label>
+        <input type="date" id="workDate">
       </div>
       <div class="field">
         <label for="hours">근무 시간</label>
         <input type="number" id="hours" min="0" step="0.5" placeholder="예: 4 또는 4.5">
       </div>
     </div>
-    <button class="btn-add" id="addBtn">기록 추가</button>
+    <button class="btn-full" id="addWorkBtn">기록 추가</button>
   </div>
 
   <div class="card">
-    <h2>전체 요약 <span class="tag" id="cntTag">0건</span></h2>
+    <h2>전체 요약 <span class="tag" id="workCntTag">0건</span></h2>
     <div class="summary-grid">
-      <div class="stat"><div class="k">총 근무 시간</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
-      <div class="stat"><div class="k">총 급여</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
+      <div class="stat s-accent"><div class="k">총 근무 시간</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
+      <div class="stat s-accent"><div class="k">총 급여</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
     </div>
   </div>
 
@@ -130,189 +174,382 @@
     <h2>일별 기록</h2>
     <div id="dailyArea"><p class="empty">불러오는 중...</p></div>
   </div>
-
   <div class="card">
     <h2>주별 계산</h2>
     <div id="weeklyArea"><p class="empty">불러오는 중...</p></div>
   </div>
-
   <div class="card">
     <h2>월별 계산</h2>
-    <div id="monthlyArea"><p class="empty">불러오는 중...</p></div>
+    <div id="workMonthlyArea"><p class="empty">불러오는 중...</p></div>
   </div>
 </div>
+</div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- ═══════════════════════════════ 가계부 탭 ═══════════════════════════════ -->
+<div class="tab-panel" id="tab-ledger">
+<div class="wrap">
+  <h1 style="margin-top:8px">가계부</h1>
+  <p class="sub">알바 수입은 자동으로 반영됩니다. 지출 항목을 직접 추가해 보세요.</p>
+  <div class="status-bar" id="ledgerStatus">연결 중...</div>
+
+  <!-- 월 필터 -->
+  <div class="month-filter">
+    <label style="margin:0;white-space:nowrap">월 선택</label>
+    <input type="month" id="ledgerMonth">
+    <button class="btn-ghost" onclick="renderLedger()">적용</button>
+  </div>
+
+  <!-- 요약 -->
+  <div class="card">
+    <h2>이번 달 요약</h2>
+    <div class="summary-grid">
+      <div class="stat s-income"><div class="k">수입 (알바 포함)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
+      <div class="stat s-expense"><div class="k">지출</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
+      <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
+    </div>
+  </div>
+
+  <!-- 지출 추가 -->
+  <div class="card">
+    <h2>지출 추가</h2>
+    <div class="row">
+      <div class="field">
+        <label for="ledgerDate">날짜</label>
+        <input type="date" id="ledgerDate">
+      </div>
+      <div class="field">
+        <label for="ledgerCat">항목</label>
+        <select id="ledgerCat">
+          <option value="카드비">카드비</option>
+          <option value="식비">식비</option>
+          <option value="쇼핑">쇼핑</option>
+          <option value="교통비">교통비</option>
+          <option value="통신비">통신비</option>
+          <option value="구독료">구독료</option>
+          <option value="의료비">의료비</option>
+          <option value="문화/여가">문화/여가</option>
+          <option value="기타">기타</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="field">
+        <label for="ledgerAmt">금액 (원)</label>
+        <input type="number" id="ledgerAmt" min="0" step="100" placeholder="예: 50000">
+      </div>
+      <div class="field">
+        <label for="ledgerNote">메모 (선택)</label>
+        <input type="text" id="ledgerNote" placeholder="예: 마트 장보기">
+      </div>
+    </div>
+    <button class="btn-full" id="addLedgerBtn">지출 추가</button>
+  </div>
+
+  <!-- 내역 -->
+  <div class="card">
+    <h2>전체 내역 <span class="tag" id="ledgerCntTag">0건</span></h2>
+    <div id="ledgerArea"><p class="empty">불러오는 중...</p></div>
+  </div>
+
+  <!-- 카테고리별 -->
+  <div class="card">
+    <h2>카테고리별 지출</h2>
+    <div id="catArea"><p class="empty">-</p></div>
+  </div>
+</div>
+</div>
+
 <script>
-/* =====================================================================
-   ↓↓↓ 여기 두 줄만 본인 값으로 바꾸세요 ↓↓↓
-   - SUPABASE_URL : 프로젝트 URL (https://xxxx.supabase.co 형태)
-   - SUPABASE_KEY : publishable key (sb_publishable_... 로 시작)
-===================================================================== */
 const SUPABASE_URL = "https://jzvwofjmfislljxofivk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
-/* ===================================================================== */
 
 const DAYS = ["일","월","화","수","목","금","토"];
-let sb = null;
-let entries = [];
-let settings = { wage:0, week_start:1 };
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const statusEl = document.getElementById("status");
-function setStatus(msg, type){
-  statusEl.textContent = msg;
-  statusEl.className = "status" + (type ? " "+type : "");
+let settings = { wage:0, week_start:1 };
+let workEntries = [];
+let ledgerEntries = [];
+
+// ── 유틸 ──
+function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
+function fmtH(n){ return (Math.round(n*100)/100).toString(); }
+function ymd(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function shortDate(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}.${d.getDate()}`; }
+function ym(s){ return s.slice(0,7); }
+
+function setStatus(id, msg, isErr){
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = "status-bar" + (isErr ? " err" : "");
 }
 
-function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
-function fmtHours(n){ return (Math.round(n*100)/100).toString(); }
+// ── 탭 전환 ──
+function switchTab(tab){
+  document.querySelectorAll(".tab-panel").forEach(p=> p.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(b=> b.classList.remove("active"));
+  document.getElementById("tab-"+tab).classList.add("active");
+  event.currentTarget.classList.add("active");
+  if(tab==="ledger") renderLedger();
+}
 
+// ── 주 시작 계산 ──
 function weekStartDate(dateStr){
   const d = new Date(dateStr+"T00:00:00");
-  const dow = d.getDay();
-  let diff = dow - settings.week_start;
-  if(diff < 0) diff += 7;
+  let diff = d.getDay() - settings.week_start;
+  if(diff<0) diff+=7;
   d.setDate(d.getDate()-diff);
   return d;
 }
-function ymd(d){
-  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-}
-function shortDate(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}.${d.getDate()}`; }
 
-function render(){
-  document.getElementById("wage").value = settings.wage || "";
+// ══════════════ 알바 탭 ══════════════
+function renderWork(){
+  document.getElementById("wage").value = settings.wage||"";
   document.getElementById("weekStart").value = settings.week_start;
 
-  const list = [...entries].sort((a,b)=> a.date < b.date ? 1 : -1);
+  const list = [...workEntries].sort((a,b)=> a.date<b.date?1:-1);
   const wage = Number(settings.wage)||0;
-
   const totH = list.reduce((s,e)=>s+Number(e.hours),0);
-  document.getElementById("totHours").textContent = fmtHours(totH);
+
+  document.getElementById("totHours").textContent = fmtH(totH);
   document.getElementById("totPay").textContent = won(totH*wage);
-  document.getElementById("cntTag").textContent = list.length+"건";
+  document.getElementById("workCntTag").textContent = list.length+"건";
 
-  const dailyArea = document.getElementById("dailyArea");
-  if(list.length===0){
-    dailyArea.innerHTML = '<p class="empty">아직 기록이 없습니다.</p>';
-  }else{
-    let h = '<table><thead><tr><th>날짜</th><th>요일</th><th class="num">시간</th><th class="num">일급</th><th></th></tr></thead><tbody>';
+  // 일별
+  const da = document.getElementById("dailyArea");
+  if(!list.length){ da.innerHTML='<p class="empty">아직 기록이 없습니다.</p>'; }
+  else{
+    let h='<table><thead><tr><th>날짜</th><th>요일</th><th class="num">시간</th><th class="num">일급</th><th></th></tr></thead><tbody>';
     for(const e of list){
-      const d = new Date(e.date+"T00:00:00");
-      h += `<tr>
-        <td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
-        <td class="num">${fmtHours(Number(e.hours))}</td>
-        <td class="num money">${won(Number(e.hours)*wage)}</td>
-        <td><button class="del" data-id="${e.id}">삭제</button></td>
-      </tr>`;
+      const d=new Date(e.date+"T00:00:00");
+      h+=`<tr><td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
+          <td class="num">${fmtH(Number(e.hours))}</td>
+          <td class="num money">${won(Number(e.hours)*wage)}</td>
+          <td><button class="del" data-id="${e.id}">삭제</button></td></tr>`;
     }
-    h += '</tbody></table>';
-    dailyArea.innerHTML = h;
-    dailyArea.querySelectorAll(".del").forEach(b=> b.onclick = ()=> deleteEntry(b.dataset.id));
+    da.innerHTML=h+'</tbody></table>';
+    da.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteWork(b.dataset.id));
   }
 
-  const weekMap = {};
+  // 주별
+  const wm={};
   for(const e of list){
-    const ws = weekStartDate(e.date), key = ymd(ws);
-    if(!weekMap[key]) weekMap[key] = {hours:0, start:ws};
-    weekMap[key].hours += Number(e.hours);
+    const ws=weekStartDate(e.date), k=ymd(ws);
+    if(!wm[k]) wm[k]={hours:0,start:ws};
+    wm[k].hours+=Number(e.hours);
   }
-  renderPeriod("weeklyArea", Object.keys(weekMap).sort().reverse().map(k=>{
-    const we = new Date(weekMap[k].start); we.setDate(we.getDate()+6);
-    return { label:`${shortDate(k)} ~ ${we.getMonth()+1}.${we.getDate()}`, hours:weekMap[k].hours, pay:weekMap[k].hours*wage };
+  renderPeriod("weeklyArea", Object.keys(wm).sort().reverse().map(k=>{
+    const we=new Date(wm[k].start); we.setDate(we.getDate()+6);
+    return {label:`${shortDate(k)} ~ ${we.getMonth()+1}.${we.getDate()}`, hours:wm[k].hours, pay:wm[k].hours*wage};
   }));
 
-  const monthMap = {};
-  for(const e of list){ const k=e.date.slice(0,7); monthMap[k]=(monthMap[k]||0)+Number(e.hours); }
-  renderPeriod("monthlyArea", Object.keys(monthMap).sort().reverse().map(k=>{
+  // 월별
+  const mm={};
+  for(const e of list){ const k=e.date.slice(0,7); mm[k]=(mm[k]||0)+Number(e.hours); }
+  renderPeriod("workMonthlyArea", Object.keys(mm).sort().reverse().map(k=>{
     const [y,m]=k.split("-");
-    return { label:`${y}년 ${Number(m)}월`, hours:monthMap[k], pay:monthMap[k]*wage };
+    return {label:`${y}년 ${Number(m)}월`, hours:mm[k], pay:mm[k]*wage};
   }));
 }
 
 function renderPeriod(id, rows){
-  const el = document.getElementById(id);
-  if(rows.length===0){ el.innerHTML='<p class="empty">기록이 없습니다.</p>'; return; }
-  el.innerHTML = rows.map(r=>`
-    <div class="period-row">
-      <div><div class="label">${r.label}</div><div class="meta">${fmtHours(r.hours)}시간</div></div>
-      <div class="amt">${won(r.pay)}원</div>
-    </div>`).join("");
+  const el=document.getElementById(id);
+  if(!rows.length){ el.innerHTML='<p class="empty">기록이 없습니다.</p>'; return; }
+  el.innerHTML=rows.map(r=>`<div class="period-row">
+    <div><div class="label">${r.label}</div><div class="meta">${fmtH(r.hours)}시간</div></div>
+    <div class="amt">${won(r.pay)}원</div></div>`).join("");
 }
 
+// ══════════════ 가계부 탭 ══════════════
+function renderLedger(){
+  const month = document.getElementById("ledgerMonth").value; // YYYY-MM
+  const wage = Number(settings.wage)||0;
+
+  // 알바 수입: 해당 월 work_entries 합산
+  const workIncome = workEntries
+    .filter(e=> ym(e.date)===month)
+    .reduce((s,e)=> s+Number(e.hours)*wage, 0);
+
+  // 해당 월 ledger (지출만)
+  const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
+  const totalExpense = monthLedger.reduce((s,e)=> s+Number(e.amount), 0);
+  const totalIncome = workIncome; // 현재는 알바 수입만
+  const balance = totalIncome - totalExpense;
+
+  document.getElementById("sumIncome").textContent = won(totalIncome);
+  document.getElementById("sumExpense").textContent = won(totalExpense);
+  document.getElementById("sumBalance").textContent = won(balance);
+  document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
+
+  // 전체 내역 (알바 수입 + 지출 합산, 날짜 내림차순)
+  // 알바 수입을 날짜별로 묶어서 행 생성
+  const workRows = workEntries
+    .filter(e=> ym(e.date)===month)
+    .map(e=>({
+      id: "w-"+e.id,
+      date: e.date,
+      type: "income",
+      category: "알바 수입",
+      amount: Number(e.hours)*wage,
+      note: fmtH(Number(e.hours))+"시간 근무",
+      deletable: false
+    }));
+  const expRows = monthLedger.map(e=>({
+    id: e.id,
+    date: e.entry_date,
+    type: "expense",
+    category: e.category,
+    amount: Number(e.amount),
+    note: e.note||"",
+    deletable: true
+  }));
+  const allRows = [...workRows, ...expRows].sort((a,b)=> a.date<b.date?1:-1);
+
+  const la = document.getElementById("ledgerArea");
+  if(!allRows.length){ la.innerHTML='<p class="empty">이번 달 내역이 없습니다.</p>'; }
+  else{
+    let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
+    for(const r of allRows){
+      const d=new Date(r.date+"T00:00:00");
+      const badge = r.type==="income"
+        ? '<span class="badge badge-in">수입</span>'
+        : '<span class="badge badge-ex">지출</span>';
+      const amtClass = r.type==="income" ? "num" : "num";
+      const amtColor = r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700";
+      const delBtn = r.deletable ? `<button class="del" data-id="${r.id}">삭제</button>` : "";
+      h+=`<tr>
+        <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
+        <td>${badge}</td>
+        <td class="cat">${r.category}</td>
+        <td class="${amtClass}" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
+        <td style="font-size:13px;color:var(--ink-soft)">${r.note}</td>
+        <td>${delBtn}</td>
+      </tr>`;
+    }
+    la.innerHTML=h+'</tbody></table>';
+    la.querySelectorAll(".del").forEach(b=>b.onclick=()=>deleteLedger(b.dataset.id));
+  }
+
+  // 카테고리별 지출
+  const catMap={};
+  for(const e of monthLedger){ catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); }
+  const catArea=document.getElementById("catArea");
+  const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  if(!cats.length){ catArea.innerHTML='<p class="empty">지출 내역이 없습니다.</p>'; }
+  else{
+    catArea.innerHTML=cats.map(([cat,amt])=>`
+      <div class="period-row">
+        <div class="label">${cat}</div>
+        <div class="amt">${won(amt)}원</div>
+      </div>`).join("");
+  }
+}
+
+// ══════════════ Supabase CRUD ══════════════
 async function loadAll(){
   try{
-    const s = await sb.from("app_settings").select("*").eq("id",1).single();
-    if(s.data) settings = s.data;
-    const e = await sb.from("work_entries").select("*");
-    if(e.error) throw e.error;
-    entries = e.data || [];
-    setStatus("클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
-    render();
+    // 설정
+    const {data:sd, error:se} = await sb.from("app_settings").select("*").eq("id",1).single();
+    if(se) throw se;
+    if(sd) settings=sd;
+
+    // 알바 기록
+    const {data:wd, error:we} = await sb.from("work_entries").select("*");
+    if(we) throw we;
+    workEntries = wd||[];
+
+    // 가계부 지출
+    const {data:ld, error:le} = await sb.from("ledger_entries").select("*");
+    if(le) throw le;
+    ledgerEntries = ld||[];
+
+    setStatus("workStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
+    setStatus("ledgerStatus","클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
+    renderWork();
+    renderLedger();
   }catch(err){
-    setStatus("데이터를 불러오지 못했습니다: " + (err.message||err), "err");
-    render();
+    setStatus("workStatus","연결 오류: "+(err.message||err), true);
+    setStatus("ledgerStatus","연결 오류: "+(err.message||err), true);
   }
 }
 
-async function addEntry(){
-  const date = document.getElementById("date").value;
-  const hours = parseFloat(document.getElementById("hours").value);
-  if(!date){ alert("날짜를 선택하세요."); return; }
-  if(!hours || hours<=0){ alert("근무 시간을 올바르게 입력하세요."); return; }
-  const btn = document.getElementById("addBtn"); btn.disabled = true;
+async function addWork(){
+  const date=document.getElementById("workDate").value;
+  const hours=parseFloat(document.getElementById("hours").value);
+  if(!date){alert("날짜를 선택하세요.");return;}
+  if(!hours||hours<=0){alert("근무 시간을 올바르게 입력하세요.");return;}
+  const btn=document.getElementById("addWorkBtn"); btn.disabled=true;
   try{
-    const r = await sb.from("work_entries").insert({date, hours});
-    if(r.error) throw r.error;
-    document.getElementById("hours").value = "";
+    const {error}=await sb.from("work_entries").insert({date,hours});
+    if(error) throw error;
+    document.getElementById("hours").value="";
     await loadAll();
-  }catch(err){
-    setStatus("저장 실패: " + (err.message||err), "err");
-  }finally{ btn.disabled = false; }
+  }catch(err){ setStatus("workStatus","저장 실패: "+(err.message||err),true); }
+  finally{ btn.disabled=false; }
 }
 
-async function deleteEntry(id){
+async function deleteWork(id){
   try{
-    const r = await sb.from("work_entries").delete().eq("id", id);
-    if(r.error) throw r.error;
+    const {error}=await sb.from("work_entries").delete().eq("id",id);
+    if(error) throw error;
     await loadAll();
-  }catch(err){
-    setStatus("삭제 실패: " + (err.message||err), "err");
-  }
+  }catch(err){ setStatus("workStatus","삭제 실패: "+(err.message||err),true); }
+}
+
+async function addLedger(){
+  const entry_date=document.getElementById("ledgerDate").value;
+  const category=document.getElementById("ledgerCat").value;
+  const amount=parseFloat(document.getElementById("ledgerAmt").value);
+  const note=document.getElementById("ledgerNote").value.trim();
+  if(!entry_date){alert("날짜를 선택하세요.");return;}
+  if(!amount||amount<=0){alert("금액을 올바르게 입력하세요.");return;}
+  const btn=document.getElementById("addLedgerBtn"); btn.disabled=true;
+  try{
+    const {error}=await sb.from("ledger_entries").insert({entry_date,type:"expense",category,amount,note});
+    if(error) throw error;
+    document.getElementById("ledgerAmt").value="";
+    document.getElementById("ledgerNote").value="";
+    await loadAll();
+  }catch(err){ setStatus("ledgerStatus","저장 실패: "+(err.message||err),true); }
+  finally{ btn.disabled=false; }
+}
+
+async function deleteLedger(id){
+  try{
+    const {error}=await sb.from("ledger_entries").delete().eq("id",id);
+    if(error) throw error;
+    await loadAll();
+  }catch(err){ setStatus("ledgerStatus","삭제 실패: "+(err.message||err),true); }
 }
 
 let hintTimer;
-function showSaved(){
-  const h = document.getElementById("savedHint");
-  h.textContent = "저장됨";
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(()=> h.textContent="", 1500);
-}
 async function saveSettings(patch){
   try{
-    const r = await sb.from("app_settings").update(patch).eq("id",1);
-    if(r.error) throw r.error;
-    Object.assign(settings, patch);
-    showSaved();
-    render();
-  }catch(err){
-    setStatus("설정 저장 실패: " + (err.message||err), "err");
-  }
+    const {error}=await sb.from("app_settings").update(patch).eq("id",1);
+    if(error) throw error;
+    Object.assign(settings,patch);
+    const h=document.getElementById("savedHint");
+    h.textContent="저장됨";
+    clearTimeout(hintTimer);
+    hintTimer=setTimeout(()=>h.textContent="",1500);
+    renderWork();
+  }catch(err){ setStatus("workStatus","설정 저장 실패: "+(err.message||err),true); }
 }
 
-document.getElementById("addBtn").onclick = addEntry;
-document.getElementById("wage").onchange = (e)=> saveSettings({ wage: parseFloat(e.target.value)||0 });
-document.getElementById("weekStart").onchange = (e)=> saveSettings({ week_start: parseInt(e.target.value) });
+// ── 이벤트 연결 ──
+document.getElementById("addWorkBtn").onclick = addWork;
+document.getElementById("addLedgerBtn").onclick = addLedger;
+document.getElementById("wage").onchange = e=> saveSettings({wage:parseFloat(e.target.value)||0});
+document.getElementById("weekStart").onchange = e=> saveSettings({week_start:parseInt(e.target.value)});
 
-document.getElementById("date").value = ymd(new Date());
-if(SUPABASE_URL.startsWith("여기에") || SUPABASE_KEY.startsWith("여기에")){
-  setStatus("아직 연결 정보가 입력되지 않았습니다. 파일 위쪽 SUPABASE_URL 과 SUPABASE_KEY 두 줄을 본인 값으로 바꿔주세요.", "warn");
-  ["dailyArea","weeklyArea","monthlyArea"].forEach(id=> document.getElementById(id).innerHTML='<p class="empty">연결 정보 입력 후 표시됩니다.</p>');
-}else{
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  loadAll();
-}
+// 초기값
+const today=ymd(new Date());
+document.getElementById("workDate").value=today;
+document.getElementById("ledgerDate").value=today;
+document.getElementById("ledgerMonth").value=today.slice(0,7);
+
+loadAll();
 </script>
 </body>
 </html>
