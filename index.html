@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>알바 급여 계산기 (클라우드 저장)</title>
+<style>
+  :root{
+    --paper:#f7f6f2; --ink:#1f2328; --ink-soft:#5b6068;
+    --line:#e2e0d8; --line-strong:#cfccc1;
+    --accent:#1d6b5f; --accent-soft:#e6f0ee;
+    --money:#9a5b1a; --danger:#b23b3b; --card:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.5;
+    padding:24px 16px 80px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:840px;margin:0 auto}
+  h1{font-size:26px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px}
+  .sub{color:var(--ink-soft);font-size:14px;margin-bottom:16px}
+
+  .status{
+    font-size:13px;font-weight:600;border-radius:9px;padding:10px 14px;margin-bottom:20px;
+    background:var(--accent-soft);color:var(--accent);
+  }
+  .status.err{background:#fbeaea;color:var(--danger)}
+  .status.warn{background:#fdf3e3;color:#9a5b1a}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:20px}
+  .card h2{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:20px}
+
+  label{display:block;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+  input[type=number],input[type=date],select{
+    width:100%;padding:10px 12px;font-size:15px;font-family:inherit;
+    border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink);
+  }
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row .field{flex:1;min-width:120px}
+
+  button{
+    font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;border:none;border-radius:9px;
+    padding:11px 18px;background:var(--accent);color:#fff;transition:filter .12s;
+  }
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .btn-add{width:100%;margin-top:4px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line)}
+  th{font-size:12px;font-weight:700;color:var(--ink-soft)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .money{color:var(--money);font-weight:700;font-variant-numeric:tabular-nums}
+  .del{background:none;color:var(--danger);padding:4px 8px;font-size:13px;border:1px solid var(--line-strong);border-radius:7px;font-weight:600}
+  .del:hover{background:#fbeaea;filter:none}
+
+  .empty{color:var(--ink-soft);font-size:14px;padding:18px 0;text-align:center}
+
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+  .stat{background:var(--accent);color:#fff;border-radius:11px;padding:16px}
+  .stat .k{font-size:12px;opacity:.85;font-weight:600;margin-bottom:6px}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat .v small{font-size:13px;font-weight:600;opacity:.85}
+
+  .period-row{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .period-row:last-child{border-bottom:none}
+  .period-row .label{font-weight:600}
+  .period-row .meta{color:var(--ink-soft);font-size:13px}
+  .period-row .amt{font-variant-numeric:tabular-nums;font-weight:700;color:var(--money)}
+
+  .wage-line{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+  .wage-line .field{flex:1;min-width:160px}
+  .saved-hint{font-size:12px;color:var(--accent);font-weight:600;height:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>알바 급여 계산기</h1>
+  <p class="sub">근무 날짜와 시간을 입력하면 일별·주별·월별 급여가 자동으로 계산됩니다. 기록은 클라우드에 저장되어 어느 노트북에서 열어도 같이 보입니다.</p>
+
+  <div class="status" id="status">연결 준비 중...</div>
+
+  <div class="card">
+    <h2>시급 설정</h2>
+    <div class="wage-line">
+      <div class="field">
+        <label for="wage">시급 (원)</label>
+        <input type="number" id="wage" min="0" step="10" placeholder="예: 10030">
+      </div>
+      <div class="field" style="max-width:200px">
+        <label for="weekStart">주 시작 요일</label>
+        <select id="weekStart">
+          <option value="1">월요일 시작</option>
+          <option value="0">일요일 시작</option>
+        </select>
+      </div>
+    </div>
+    <div class="saved-hint" id="savedHint"></div>
+  </div>
+
+  <div class="card">
+    <h2>근무 기록 추가</h2>
+    <div class="row">
+      <div class="field">
+        <label for="date">날짜</label>
+        <input type="date" id="date">
+      </div>
+      <div class="field">
+        <label for="hours">근무 시간</label>
+        <input type="number" id="hours" min="0" step="0.5" placeholder="예: 4 또는 4.5">
+      </div>
+    </div>
+    <button class="btn-add" id="addBtn">기록 추가</button>
+  </div>
+
+  <div class="card">
+    <h2>전체 요약 <span class="tag" id="cntTag">0건</span></h2>
+    <div class="summary-grid">
+      <div class="stat"><div class="k">총 근무 시간</div><div class="v"><span id="totHours">0</span><small> 시간</small></div></div>
+      <div class="stat"><div class="k">총 급여</div><div class="v"><span id="totPay">0</span><small> 원</small></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>일별 기록</h2>
+    <div id="dailyArea"><p class="empty">불러오는 중...</p></div>
+  </div>
+
+  <div class="card">
+    <h2>주별 계산</h2>
+    <div id="weeklyArea"><p class="empty">불러오는 중...</p></div>
+  </div>
+
+  <div class="card">
+    <h2>월별 계산</h2>
+    <div id="monthlyArea"><p class="empty">불러오는 중...</p></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* =====================================================================
+   ↓↓↓ 여기 두 줄만 본인 값으로 바꾸세요 ↓↓↓
+   - SUPABASE_URL : 프로젝트 URL (https://xxxx.supabase.co 형태)
+   - SUPABASE_KEY : publishable key (sb_publishable_... 로 시작)
+===================================================================== */
+const SUPABASE_URL = "https://jzvwofjmfislljxofivk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
+/* ===================================================================== */
+
+const DAYS = ["일","월","화","수","목","금","토"];
+let sb = null;
+let entries = [];
+let settings = { wage:0, week_start:1 };
+
+const statusEl = document.getElementById("status");
+function setStatus(msg, type){
+  statusEl.textContent = msg;
+  statusEl.className = "status" + (type ? " "+type : "");
+}
+
+function won(n){ return Math.round(n).toLocaleString("ko-KR"); }
+function fmtHours(n){ return (Math.round(n*100)/100).toString(); }
+
+function weekStartDate(dateStr){
+  const d = new Date(dateStr+"T00:00:00");
+  const dow = d.getDay();
+  let diff = dow - settings.week_start;
+  if(diff < 0) diff += 7;
+  d.setDate(d.getDate()-diff);
+  return d;
+}
+function ymd(d){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function shortDate(s){ const d=new Date(s+"T00:00:00"); return `${d.getMonth()+1}.${d.getDate()}`; }
+
+function render(){
+  document.getElementById("wage").value = settings.wage || "";
+  document.getElementById("weekStart").value = settings.week_start;
+
+  const list = [...entries].sort((a,b)=> a.date < b.date ? 1 : -1);
+  const wage = Number(settings.wage)||0;
+
+  const totH = list.reduce((s,e)=>s+Number(e.hours),0);
+  document.getElementById("totHours").textContent = fmtHours(totH);
+  document.getElementById("totPay").textContent = won(totH*wage);
+  document.getElementById("cntTag").textContent = list.length+"건";
+
+  const dailyArea = document.getElementById("dailyArea");
+  if(list.length===0){
+    dailyArea.innerHTML = '<p class="empty">아직 기록이 없습니다.</p>';
+  }else{
+    let h = '<table><thead><tr><th>날짜</th><th>요일</th><th class="num">시간</th><th class="num">일급</th><th></th></tr></thead><tbody>';
+    for(const e of list){
+      const d = new Date(e.date+"T00:00:00");
+      h += `<tr>
+        <td>${e.date}</td><td>${DAYS[d.getDay()]}</td>
+        <td class="num">${fmtHours(Number(e.hours))}</td>
+        <td class="num money">${won(Number(e.hours)*wage)}</td>
+        <td><button class="del" data-id="${e.id}">삭제</button></td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+    dailyArea.innerHTML = h;
+    dailyArea.querySelectorAll(".del").forEach(b=> b.onclick = ()=> deleteEntry(b.dataset.id));
+  }
+
+  const weekMap = {};
+  for(const e of list){
+    const ws = weekStartDate(e.date), key = ymd(ws);
+    if(!weekMap[key]) weekMap[key] = {hours:0, start:ws};
+    weekMap[key].hours += Number(e.hours);
+  }
+  renderPeriod("weeklyArea", Object.keys(weekMap).sort().reverse().map(k=>{
+    const we = new Date(weekMap[k].start); we.setDate(we.getDate()+6);
+    return { label:`${shortDate(k)} ~ ${we.getMonth()+1}.${we.getDate()}`, hours:weekMap[k].hours, pay:weekMap[k].hours*wage };
+  }));
+
+  const monthMap = {};
+  for(const e of list){ const k=e.date.slice(0,7); monthMap[k]=(monthMap[k]||0)+Number(e.hours); }
+  renderPeriod("monthlyArea", Object.keys(monthMap).sort().reverse().map(k=>{
+    const [y,m]=k.split("-");
+    return { label:`${y}년 ${Number(m)}월`, hours:monthMap[k], pay:monthMap[k]*wage };
+  }));
+}
+
+function renderPeriod(id, rows){
+  const el = document.getElementById(id);
+  if(rows.length===0){ el.innerHTML='<p class="empty">기록이 없습니다.</p>'; return; }
+  el.innerHTML = rows.map(r=>`
+    <div class="period-row">
+      <div><div class="label">${r.label}</div><div class="meta">${fmtHours(r.hours)}시간</div></div>
+      <div class="amt">${won(r.pay)}원</div>
+    </div>`).join("");
+}
+
+async function loadAll(){
+  try{
+    const s = await sb.from("app_settings").select("*").eq("id",1).single();
+    if(s.data) settings = s.data;
+    const e = await sb.from("work_entries").select("*");
+    if(e.error) throw e.error;
+    entries = e.data || [];
+    setStatus("클라우드에 연결됨. 기록이 자동으로 저장됩니다.");
+    render();
+  }catch(err){
+    setStatus("데이터를 불러오지 못했습니다: " + (err.message||err), "err");
+    render();
+  }
+}
+
+async function addEntry(){
+  const date = document.getElementById("date").value;
+  const hours = parseFloat(document.getElementById("hours").value);
+  if(!date){ alert("날짜를 선택하세요."); return; }
+  if(!hours || hours<=0){ alert("근무 시간을 올바르게 입력하세요."); return; }
+  const btn = document.getElementById("addBtn"); btn.disabled = true;
+  try{
+    const r = await sb.from("work_entries").insert({date, hours});
+    if(r.error) throw r.error;
+    document.getElementById("hours").value = "";
+    await loadAll();
+  }catch(err){
+    setStatus("저장 실패: " + (err.message||err), "err");
+  }finally{ btn.disabled = false; }
+}
+
+async function deleteEntry(id){
+  try{
+    const r = await sb.from("work_entries").delete().eq("id", id);
+    if(r.error) throw r.error;
+    await loadAll();
+  }catch(err){
+    setStatus("삭제 실패: " + (err.message||err), "err");
+  }
+}
+
+let hintTimer;
+function showSaved(){
+  const h = document.getElementById("savedHint");
+  h.textContent = "저장됨";
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(()=> h.textContent="", 1500);
+}
+async function saveSettings(patch){
+  try{
+    const r = await sb.from("app_settings").update(patch).eq("id",1);
+    if(r.error) throw r.error;
+    Object.assign(settings, patch);
+    showSaved();
+    render();
+  }catch(err){
+    setStatus("설정 저장 실패: " + (err.message||err), "err");
+  }
+}
+
+document.getElementById("addBtn").onclick = addEntry;
+document.getElementById("wage").onchange = (e)=> saveSettings({ wage: parseFloat(e.target.value)||0 });
+document.getElementById("weekStart").onchange = (e)=> saveSettings({ week_start: parseInt(e.target.value) });
+
+document.getElementById("date").value = ymd(new Date());
+if(SUPABASE_URL.startsWith("여기에") || SUPABASE_KEY.startsWith("여기에")){
+  setStatus("아직 연결 정보가 입력되지 않았습니다. 파일 위쪽 SUPABASE_URL 과 SUPABASE_KEY 두 줄을 본인 값으로 바꿔주세요.", "warn");
+  ["dailyArea","weeklyArea","monthlyArea"].forEach(id=> document.getElementById(id).innerHTML='<p class="empty">연결 정보 입력 후 표시됩니다.</p>');
+}else{
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  loadAll();
+}
+</script>
+</body>
+</html>
