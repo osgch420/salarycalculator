@@ -342,7 +342,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <!-- 월 선택 & 올해 연간 요약 영역 -->
   <div class="month-filter-wrap">
     <div class="month-filter">
+      <button class="btn-ghost cal-nav-btn" onclick="changeLedgerMonth(-1)" style="margin-right:6px;">◀</button>
       <input type="month" id="ledgerMonth" onchange="renderLedger()">
+      <button class="btn-ghost cal-nav-btn" onclick="changeLedgerMonth(1)" style="margin-left:6px;">▶</button>
     </div>
     <div class="yearly-summary">
       <div class="y-stat"><span class="lbl">올해 총 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
@@ -729,6 +731,15 @@ if (typeof window.supabase === 'undefined') {
       da.innerHTML=h+'</tbody></table>';
     }
   }
+
+  // 가계부 월 이동 (◀ ▶ 버튼)
+  window.changeLedgerMonth = function(dir){
+    const el = document.getElementById("ledgerMonth");
+    const [y, m] = el.value.split("-").map(Number);
+    const d = new Date(y, m - 1 + dir, 1);
+    el.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    renderLedger();
+  };
 
   // 가계부 탭 렌더링
   window.renderLedger = function(){
