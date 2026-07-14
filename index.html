@@ -179,6 +179,27 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   display:none; font-size:13px; color:#9a5b1a; background:#fdf3e3;
   border-radius:8px; padding:10px 12px; margin-top:8px;
 }
+
+/* 일괄 작업 막대 */
+.bulk-bar {
+  display:none; align-items:center; gap:8px; flex-wrap:wrap;
+  background:var(--accent-soft); border:1px solid var(--accent);
+  border-radius:10px; padding:10px 12px; margin-bottom:12px;
+}
+.bulk-count { font-size:13px; font-weight:700; color:var(--accent); margin-right:2px; }
+.bulk-select {
+  width:auto; padding:7px 10px; font-size:13px; font-weight:600;
+  border-radius:8px; border:1px solid var(--line-strong);
+}
+.bulk-btn {
+  padding:7px 12px; font-size:13px; font-weight:700; border-radius:8px;
+  background:var(--accent); color:#fff;
+}
+.bulk-btn.bulk-del { background:var(--danger); }
+.bulk-btn.bulk-clear { background:#fff; color:var(--ink-soft); border:1px solid var(--line-strong); }
+.bulk-btn.bulk-clear:hover { background:#f0eee6; filter:none; }
+.row-check { width:16px; height:16px; cursor:pointer; margin:0; }
+tr.row-selected { background:#f2f8f6; }
 </style>
 </head>
 <body>
@@ -411,6 +432,16 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>전체 내역 <span class="tag" id="ledgerCntTag">0건</span></h2>
     <input type="text" id="ledgerSearch" placeholder="메모 또는 항목 검색 (예: 마트, 카드비)" style="margin-bottom:12px" oninput="renderLedger()">
+
+    <!-- 여러 건 선택 시 나타나는 작업 막대 -->
+    <div id="bulkBar" class="bulk-bar">
+      <span class="bulk-count"><b id="bulkCount">0</b>건 선택됨</span>
+      <select id="bulkCat" class="bulk-select"></select>
+      <button class="bulk-btn" onclick="bulkUpdateCategory()">항목 일괄 변경</button>
+      <button class="bulk-btn bulk-del" onclick="bulkDelete()">일괄 삭제</button>
+      <button class="bulk-btn bulk-clear" onclick="clearSelection()">선택 해제</button>
+    </div>
+
     <div id="ledgerArea"><p class="empty">불러오는 중...</p></div>
   </div>
 
@@ -736,6 +767,105 @@ if (typeof window.supabase === 'undefined') {
     }
   }
 
+  // 가계부 여러 건 선택 상태
+  let selectedIds = new Set();
+
+  // 전체 카테고리 목록 (일괄 변경용)
+  const EXPENSE_CATS = ["카드비","식비","쇼핑","교통비","통신비","구독료","의료비","문화/여가","기타"];
+  const INCOME_CATS  = ["용돈","월급","보너스","대납정산","기타수입"];
+
+  // 개별 행 체크
+  window.toggleRow = function(id, checked){
+    if(checked) selectedIds.add(String(id));
+    else selectedIds.delete(String(id));
+    renderLedger();
+  };
+
+  // 전체 선택 / 해제
+  window.toggleAllRows = function(checked){
+    const boxes = document.querySelectorAll("#ledgerArea .row-check");
+    // 헤더 체크박스는 제외하고 처리하기 위해 renderLedger 데이터를 다시 계산
+    if(!checked){ selectedIds.clear(); renderLedger(); return; }
+    // 현재 화면에 보이는 편집 가능한 행 전부 선택
+    lastVisibleEditableIds.forEach(id => selectedIds.add(String(id)));
+    renderLedger();
+  };
+
+  window.clearSelection = function(){
+    selectedIds.clear();
+    renderLedger();
+  };
+
+  // 작업 막대 표시 갱신
+  function updateBulkBar(){
+    const bar = document.getElementById("bulkBar");
+    const cnt = selectedIds.size;
+    if(cnt === 0){ bar.style.display = "none"; return; }
+
+    document.getElementById("bulkCount").textContent = cnt;
+
+    // 선택된 항목들의 type을 확인해서 적절한 카테고리 목록 제공
+    const picked = ledgerEntries.filter(e => selectedIds.has(String(e.id)));
+    const types = new Set(picked.map(e => e.type || "expense"));
+    const sel = document.getElementById("bulkCat");
+    const prev = sel.value;
+
+    let opts = '<option value="">항목 선택...</option>';
+    if(types.size === 1 && types.has("income")){
+      opts += INCOME_CATS.map(c=>`<option value="${c}">${c}</option>`).join("");
+    } else if(types.size === 1 && types.has("expense")){
+      opts += EXPENSE_CATS.map(c=>`<option value="${c}">${c}</option>`).join("");
+    } else {
+      // 수입/지출이 섞이면 항목 변경 불가
+      opts = '<option value="">수입·지출을 섞어 선택하면 항목 변경 불가</option>';
+    }
+    sel.innerHTML = opts;
+    if(prev && opts.includes(`value="${prev}"`)) sel.value = prev;
+
+    bar.style.display = "flex";
+  }
+
+  // 항목 일괄 변경
+  window.bulkUpdateCategory = async function(){
+    const cat = document.getElementById("bulkCat").value;
+    if(!cat){ alert("변경할 항목을 선택하세요."); return; }
+    const ids = [...selectedIds];
+    if(!ids.length) return;
+    if(!confirm(`선택한 ${ids.length}건의 항목을 '${cat}'(으)로 변경할까요?`)) return;
+
+    try{
+      setStatus("ledgerStatus", "일괄 변경 중...");
+      const {error} = await sb.from("ledger_entries")
+        .update({category: cat})
+        .in("id", ids.map(Number));
+      if(error) throw error;
+      selectedIds.clear();
+      await loadAll();
+      setStatus("ledgerStatus", `${ids.length}건의 항목을 '${cat}'(으)로 변경했습니다.`);
+    }catch(err){ setStatus("ledgerStatus","일괄 변경 실패: "+(err.message||err), true); }
+  };
+
+  // 일괄 삭제
+  window.bulkDelete = async function(){
+    const ids = [...selectedIds];
+    if(!ids.length) return;
+    if(!confirm(`선택한 ${ids.length}건을 정말 삭제할까요? 되돌릴 수 없습니다.`)) return;
+
+    try{
+      setStatus("ledgerStatus", "삭제 중...");
+      const {error} = await sb.from("ledger_entries")
+        .delete()
+        .in("id", ids.map(Number));
+      if(error) throw error;
+      selectedIds.clear();
+      await loadAll();
+      setStatus("ledgerStatus", `${ids.length}건을 삭제했습니다.`);
+    }catch(err){ setStatus("ledgerStatus","일괄 삭제 실패: "+(err.message||err), true); }
+  };
+
+  // 현재 화면에 보이는 편집 가능 행 id 저장용
+  let lastVisibleEditableIds = [];
+
   // 가계부 월 이동 (◀ ▶ 버튼)
   window.changeLedgerMonth = function(dir){
     const el = document.getElementById("ledgerMonth");
@@ -851,9 +981,23 @@ if (typeof window.supabase === 'undefined') {
     if(q) document.getElementById("ledgerCntTag").textContent = viewRows.length + "건 검색됨";
 
     const la = document.getElementById("ledgerArea");
-    if(!viewRows.length){ la.innerHTML = q ? '<p class="empty">검색 결과가 없습니다.</p>' : '<p class="empty">이번 달 내역이 없습니다.</p>'; }
+    if(!viewRows.length){
+      la.innerHTML = q ? '<p class="empty">검색 결과가 없습니다.</p>' : '<p class="empty">이번 달 내역이 없습니다.</p>';
+      lastVisibleEditableIds = [];
+      selectedIds.clear();
+      updateBulkBar();
+    }
     else{
-      let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
+      // 화면에 없는 항목은 선택에서 제거
+      const visibleIds = new Set(viewRows.filter(r=>r.editable).map(r=>String(r.id)));
+      lastVisibleEditableIds = [...visibleIds];
+      [...selectedIds].forEach(id => { if(!visibleIds.has(id)) selectedIds.delete(id); });
+
+      const allChecked = visibleIds.size > 0 && [...visibleIds].every(id => selectedIds.has(id));
+
+      let h='<table><thead><tr>'
+        + `<th style="width:28px"><input type="checkbox" class="row-check" id="checkAll" ${allChecked?"checked":""} onchange="toggleAllRows(this.checked)"></th>`
+        + '<th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
       for(const r of viewRows){
         const d=new Date(r.date+"T00:00:00");
         const isPass = (r.type==="income" && r.category==="대납정산");
@@ -865,14 +1009,20 @@ if (typeof window.supabase === 'undefined') {
           : (r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700");
         
         let actionsHtml = "";
+        let checkHtml = "";
+        let rowClass = "";
         if(r.editable) {
+          const checked = selectedIds.has(String(r.id));
+          if(checked) rowClass = "row-selected";
+          checkHtml = `<input type="checkbox" class="row-check" ${checked?"checked":""} onchange="toggleRow('${r.id}', this.checked)">`;
           actionsHtml = `<div class="action-btns">
             <button class="edit" onclick="startEditLedger(${r.id})">수정</button>
             <button class="del" onclick="deleteLedger(${r.id})">삭제</button>
           </div>`;
         }
         
-        h+=`<tr>
+        h+=`<tr class="${rowClass}">
+          <td>${checkHtml}</td>
           <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
           <td>${badge}</td>
           <td class="cat">${r.category}</td>
@@ -882,6 +1032,7 @@ if (typeof window.supabase === 'undefined') {
         </tr>`;
       }
       la.innerHTML=h+'</tbody></table>';
+      updateBulkBar();
     }
 
     // 카테고리 통계는 '지출'만 보여줍니다.
