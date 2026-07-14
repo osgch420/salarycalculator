@@ -200,6 +200,19 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .bulk-btn.bulk-clear:hover { background:#f0eee6; filter:none; }
 .row-check { width:16px; height:16px; cursor:pointer; margin:0; }
 tr.row-selected { background:#f2f8f6; }
+
+/* 실행 취소 토스트 */
+.undo-toast {
+  display:none; position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  background:var(--ink); color:#fff; border-radius:12px; padding:12px 16px;
+  font-size:14px; align-items:center; gap:14px; box-shadow:0 4px 16px rgba(0,0,0,0.25);
+  z-index:1000; max-width:90vw;
+}
+.undo-toast.show { display:flex; }
+.undo-btn {
+  background:var(--accent); color:#fff; border:none; border-radius:8px;
+  padding:7px 12px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;
+}
 </style>
 </head>
 <body>
@@ -361,6 +374,10 @@ tr.row-selected { background:#f2f8f6; }
   <p class="sub">알바 수입은 지정하신 '돈 들어오는 날'을 기준으로 반영됩니다.</p>
   <div class="status-bar" id="ledgerStatus">연결 중...</div>
 
+  <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+    <button class="btn-ghost" style="font-size:13px; padding:8px 14px;" onclick="exportAllData()">⬇ 전체 데이터 백업 (CSV)</button>
+  </div>
+
   <!-- 월 선택 & 올해 연간 요약 영역 -->
   <div class="month-filter-wrap">
     <div class="month-filter">
@@ -384,6 +401,16 @@ tr.row-selected { background:#f2f8f6; }
     </div>
     <div id="passRow" style="display:none; margin-top:12px; font-size:13px; color:var(--ink-soft); background:#f4f2ec; border-radius:9px; padding:10px 12px;">
       🔁 대납 통과 금액 <b id="sumPass" style="color:var(--ink)">0</b>원 — 대신 결제하고 돌려받은 돈입니다. 실제 수입에는 포함되지 않지만 잔액 계산에는 반영됩니다.
+    </div>
+    <div id="momCompare" style="display:none; margin-top:12px; font-size:13px; border-top:1px solid var(--line); padding-top:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <span style="color:var(--ink-soft)">전월 대비 지출</span>
+        <span id="momExpenseText" style="font-weight:700"></span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="color:var(--ink-soft)">전월 대비 수입</span>
+        <span id="momIncomeText" style="font-weight:700"></span>
+      </div>
     </div>
   </div>
 
@@ -450,6 +477,12 @@ tr.row-selected { background:#f2f8f6; }
     <div id="catArea"><p class="empty">-</p></div>
   </div>
 </div>
+</div>
+
+<!-- 실행 취소 토스트 -->
+<div id="undoToast" class="undo-toast">
+  <span id="undoText">삭제했습니다.</span>
+  <button class="undo-btn" onclick="performUndo()">실행 취소</button>
 </div>
 
 <script>
@@ -770,6 +803,81 @@ if (typeof window.supabase === 'undefined') {
   // 가계부 여러 건 선택 상태
   let selectedIds = new Set();
 
+  // ── 실행 취소 토스트 (공통) ──
+  let undoTimer = null;
+  let undoAction = null;
+
+  function showUndoToast(msg, action){
+    undoAction = action;
+    const toast = document.getElementById("undoToast");
+    document.getElementById("undoText").textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(()=>{
+      toast.classList.remove("show");
+      undoAction = null;
+    }, 8000); // 8초 안에 실행 취소 가능
+  }
+
+  window.performUndo = async function(){
+    const toast = document.getElementById("undoToast");
+    if(!undoAction){ toast.classList.remove("show"); return; }
+    const action = undoAction;
+    undoAction = null;
+    clearTimeout(undoTimer);
+    toast.classList.remove("show");
+    try{
+      await action();
+      setStatus("ledgerStatus", "실행을 취소했습니다.");
+      setStatus("workStatus", "실행을 취소했습니다.");
+    }catch(err){
+      setStatus("ledgerStatus", "실행 취소 실패: "+(err.message||err), true);
+    }
+  };
+
+  // ── 전체 데이터 CSV 백업 ──
+  function csvEscape(v){
+    if(v===null||v===undefined) return "";
+    const s = String(v);
+    if(s.includes(",") || s.includes('"') || s.includes("\n")){
+      return '"' + s.replace(/"/g,'""') + '"';
+    }
+    return s;
+  }
+
+  window.exportAllData = function(){
+    const wageInfo = `기본시급,${settings.wage||0}\n주시작요일,${settings.week_start===0?"일요일":"월요일"}\n\n`;
+
+    let workCsv = "구분,근무일,입금일,근무유형,시간,출근,퇴근,직접입력금액,메모\n";
+    [...workEntries].sort((a,b)=> a.date<b.date?-1:1).forEach(e=>{
+      workCsv += ["알바",e.date,e.payment_date||"",e.work_type==='freelance'?"건별":"시간제",
+        e.hours||0, e.start_time||"", e.end_time||"",
+        (e.actual_pay!==null&&e.actual_pay!==undefined)?e.actual_pay:"", csvEscape(e.note)].join(",") + "\n";
+    });
+
+    let ledgerCsv = "구분,날짜,수입지출,항목,금액,메모\n";
+    [...ledgerEntries].sort((a,b)=> a.entry_date<b.entry_date?-1:1).forEach(e=>{
+      ledgerCsv += ["가계부", e.entry_date, (e.type||"expense")==="income"?"수입":"지출",
+        csvEscape(e.category), e.amount, csvEscape(e.note)].join(",") + "\n";
+    });
+
+    const bom = "\uFEFF"; // 엑셀 한글 깨짐 방지
+    const csv = bom + wageInfo + workCsv + "\n" + ledgerCsv;
+
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = ymd(new Date());
+    a.href = url;
+    a.download = `알바가계부_백업_${today}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setStatus("ledgerStatus", "백업 파일을 내려받았습니다. 다운로드 폴더를 확인하세요.");
+  };
+
   // 전체 카테고리 목록 (일괄 변경용)
   const EXPENSE_CATS = ["카드비","식비","쇼핑","교통비","통신비","구독료","의료비","문화/여가","기타"];
   const INCOME_CATS  = ["용돈","월급","보너스","대납정산","기타수입"];
@@ -835,6 +943,10 @@ if (typeof window.supabase === 'undefined') {
 
     try{
       setStatus("ledgerStatus", "일괄 변경 중...");
+      // 실행 취소를 위해 변경 전 항목들을 기억해둠
+      const backups = ledgerEntries.filter(e => ids.includes(String(e.id)))
+        .map(e => ({id:e.id, category:e.category}));
+
       const {error} = await sb.from("ledger_entries")
         .update({category: cat})
         .in("id", ids.map(Number));
@@ -842,6 +954,14 @@ if (typeof window.supabase === 'undefined') {
       selectedIds.clear();
       await loadAll();
       setStatus("ledgerStatus", `${ids.length}건의 항목을 '${cat}'(으)로 변경했습니다.`);
+
+      showUndoToast(`${ids.length}건 항목 변경을 취소할 수 있습니다.`, async ()=>{
+        for(const b of backups){
+          const {error:re} = await sb.from("ledger_entries").update({category:b.category}).eq("id", b.id);
+          if(re) throw re;
+        }
+        await loadAll();
+      });
     }catch(err){ setStatus("ledgerStatus","일괄 변경 실패: "+(err.message||err), true); }
   };
 
@@ -849,10 +969,13 @@ if (typeof window.supabase === 'undefined') {
   window.bulkDelete = async function(){
     const ids = [...selectedIds];
     if(!ids.length) return;
-    if(!confirm(`선택한 ${ids.length}건을 정말 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    if(!confirm(`선택한 ${ids.length}건을 정말 삭제할까요?`)) return;
 
     try{
       setStatus("ledgerStatus", "삭제 중...");
+      // 실행 취소를 위해 삭제 전 데이터를 통째로 기억해둠
+      const backups = ledgerEntries.filter(e => ids.includes(String(e.id))).map(e => ({...e}));
+
       const {error} = await sb.from("ledger_entries")
         .delete()
         .in("id", ids.map(Number));
@@ -860,6 +983,13 @@ if (typeof window.supabase === 'undefined') {
       selectedIds.clear();
       await loadAll();
       setStatus("ledgerStatus", `${ids.length}건을 삭제했습니다.`);
+
+      showUndoToast(`${ids.length}건 삭제를 취소할 수 있습니다.`, async ()=>{
+        const restores = backups.map(b => { const r = {...b}; delete r.id; return r; });
+        const {error:re} = await sb.from("ledger_entries").insert(restores);
+        if(re) throw re;
+        await loadAll();
+      });
     }catch(err){ setStatus("ledgerStatus","일괄 삭제 실패: "+(err.message||err), true); }
   };
 
@@ -946,6 +1076,53 @@ if (typeof window.supabase === 'undefined') {
       passRow.style.display = "block";
     } else {
       passRow.style.display = "none";
+    }
+
+    // ── 전월 대비 비교 ──
+    {
+      const [py, pm] = month.split("-").map(Number);
+      const prevD = new Date(py, pm - 2, 1); // pm은 1~12, 전달 구하기
+      const prevMonth = `${prevD.getFullYear()}-${String(prevD.getMonth()+1).padStart(2,"0")}`;
+
+      const prevWorkIncome = workEntries
+        .filter(e=> ym(e.payment_date || e.date)===prevMonth)
+        .reduce((s,e)=> s + calcPay(e), 0);
+      const prevManualIncome = ledgerEntries
+        .filter(e => ym(e.entry_date) === prevMonth && e.type === "income" && e.category !== "대납정산")
+        .reduce((s, e) => s + Number(e.amount), 0);
+      const prevTotalIncome = prevWorkIncome + prevManualIncome;
+
+      const prevLedger = ledgerEntries.filter(e=> ym(e.entry_date)===prevMonth);
+      const prevExpense = prevLedger.filter(e => !e.type || e.type === "expense").reduce((s,e)=> s+Number(e.amount), 0);
+
+      const momBox = document.getElementById("momCompare");
+      const hasPrevData = (prevTotalIncome > 0 || prevExpense > 0);
+
+      if(!hasPrevData){
+        momBox.style.display = "none";
+      } else {
+        momBox.style.display = "block";
+
+        function diffText(curr, prev){
+          const diff = curr - prev;
+          if(prev === 0){
+            return diff === 0 ? "전월 데이터 없음" : `신규 ${won(Math.abs(diff))}원`;
+          }
+          const pct = Math.round((diff / prev) * 100);
+          const sign = diff > 0 ? "+" : (diff < 0 ? "−" : "");
+          return `${sign}${won(Math.abs(diff))}원 (${sign}${Math.abs(pct)}%)`;
+        }
+
+        const expDiff = totalExpense - prevExpense;
+        const expEl = document.getElementById("momExpenseText");
+        expEl.textContent = diffText(totalExpense, prevExpense);
+        expEl.style.color = expDiff > 0 ? "var(--expense)" : (expDiff < 0 ? "var(--income)" : "var(--ink-soft)");
+
+        const incDiff = totalIncome - prevTotalIncome;
+        const incEl = document.getElementById("momIncomeText");
+        incEl.textContent = diffText(totalIncome, prevTotalIncome);
+        incEl.style.color = incDiff > 0 ? "var(--income)" : (incDiff < 0 ? "var(--expense)" : "var(--ink-soft)");
+      }
     }
 
     // 테이블 렌더링
@@ -1275,10 +1452,18 @@ if (typeof window.supabase === 'undefined') {
   window.deleteWork = async function(id){
     if(!confirm("이 기록을 정말 삭제할까요?")) return;
     try{
+      // 실행 취소를 위해 삭제 전 데이터를 기억해둠
+      const backup = workEntries.find(e => e.id === id);
       const {error}=await sb.from("work_entries").delete().eq("id",id);
       if(error) throw error;
       if(editingWorkId === id) cancelWorkEdit(); 
       await loadAll();
+      if(backup) showUndoToast("근무 기록을 삭제했습니다.", async ()=>{
+        const restore = {...backup}; delete restore.id;
+        const {error:re} = await sb.from("work_entries").insert(restore);
+        if(re) throw re;
+        await loadAll();
+      });
     }catch(err){ setStatus("workStatus","삭제 실패: "+(err.message||err),true); }
   }
 
@@ -1314,10 +1499,18 @@ if (typeof window.supabase === 'undefined') {
   window.deleteLedger = async function(id){
     if(!confirm("이 내역을 정말 삭제할까요?")) return;
     try{
+      // 실행 취소를 위해 삭제 전 데이터를 기억해둠
+      const backup = ledgerEntries.find(e => e.id === id);
       const {error}=await sb.from("ledger_entries").delete().eq("id",id);
       if(error) throw error;
       if(editingLedgerId === id) cancelLedgerEdit();
       await loadAll();
+      if(backup) showUndoToast("내역을 삭제했습니다.", async ()=>{
+        const restore = {...backup}; delete restore.id;
+        const {error:re} = await sb.from("ledger_entries").insert(restore);
+        if(re) throw re;
+        await loadAll();
+      });
     }catch(err){ setStatus("ledgerStatus","삭제 실패: "+(err.message||err),true); }
   }
 
