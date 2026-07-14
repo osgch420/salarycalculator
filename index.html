@@ -111,6 +111,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
 .badge-in{background:#e6f0ee;color:var(--income)}
 .badge-ex{background:#fbeaea;color:var(--expense)}
+.badge-pass{background:#eceae2;color:var(--ink-soft)}
 
 .cat{font-size:12px;font-weight:600;color:var(--ink-soft)}
 
@@ -347,7 +348,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       <button class="btn-ghost cal-nav-btn" onclick="changeLedgerMonth(1)" style="margin-left:6px;">▶</button>
     </div>
     <div class="yearly-summary">
-      <div class="y-stat"><span class="lbl">올해 총 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
+      <div class="y-stat"><span class="lbl">올해 실제 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
       <div class="y-stat"><span class="lbl">올해 총 지출</span><span class="val ex" id="yearlyExpense">0원</span></div>
       <div class="y-stat bal"><span class="lbl">올해 잔액</span><span class="val" id="yearlyBalance">0원</span></div>
     </div>
@@ -356,9 +357,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   <div class="card">
     <h2>이번 달 요약</h2>
     <div class="summary-grid">
-      <div class="stat s-income"><div class="k">수입 (알바 + 기타 수입)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
+      <div class="stat s-income"><div class="k">실제 수입 (알바 + 기타)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
       <div class="stat s-expense"><div class="k">지출</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
       <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
+    </div>
+    <div id="passRow" style="display:none; margin-top:12px; font-size:13px; color:var(--ink-soft); background:#f4f2ec; border-radius:9px; padding:10px 12px;">
+      🔁 대납 통과 금액 <b id="sumPass" style="color:var(--ink)">0</b>원 — 대신 결제하고 돌려받은 돈입니다. 실제 수입에는 포함되지 않지만 잔액 계산에는 반영됩니다.
     </div>
   </div>
 
@@ -454,7 +458,7 @@ if (typeof window.supabase === 'undefined') {
     if(type === 'expense') {
       catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="기타">기타</option>';
     } else {
-      catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="기타수입">기타수입</option>';
+      catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="대납정산">대납정산 (대신 결제하고 돌려받음)</option><option value="기타수입">기타수입</option>';
     }
   };
   updateLedgerCat(); // 초기 실행
@@ -746,12 +750,15 @@ if (typeof window.supabase === 'undefined') {
     const month = document.getElementById("ledgerMonth").value; // e.g., "2026-05"
     const year = month.slice(0, 4); // "2026"
 
-    // 연간 수입(알바+직접입력) 합산
+    // 연간 수입(알바+직접입력) 합산 — 대납정산은 실제 수입에서 제외
     const yearlyWorkIncome = workEntries
       .filter(e => (e.payment_date || e.date).startsWith(year))
       .reduce((s, e) => s + calcPay(e), 0);
     const yearlyManualIncome = ledgerEntries
-      .filter(e => e.entry_date.startsWith(year) && e.type === "income")
+      .filter(e => e.entry_date.startsWith(year) && e.type === "income" && e.category !== "대납정산")
+      .reduce((s, e) => s + Number(e.amount), 0);
+    const yearlyPass = ledgerEntries
+      .filter(e => e.entry_date.startsWith(year) && e.type === "income" && e.category === "대납정산")
       .reduce((s, e) => s + Number(e.amount), 0);
     const totalYearlyIncome = yearlyWorkIncome + yearlyManualIncome;
       
@@ -760,7 +767,8 @@ if (typeof window.supabase === 'undefined') {
       .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense"))
       .reduce((s, e) => s + Number(e.amount), 0);
 
-    const yearlyBalance = totalYearlyIncome - yearlyLedgerExpense;
+    // 잔액에는 대납정산도 포함 (실제로 들어온 돈이므로)
+    const yearlyBalance = totalYearlyIncome + yearlyPass - yearlyLedgerExpense;
 
     document.getElementById("yearlyIncome").textContent = won(totalYearlyIncome) + "원";
     document.getElementById("yearlyExpense").textContent = won(yearlyLedgerExpense) + "원";
@@ -778,24 +786,37 @@ if (typeof window.supabase === 'undefined') {
       balEl.style.color = "#fff";
     }
 
-    // 이번 달 요약
+    // 이번 달 요약 — 대납정산은 실제 수입에서 제외
     const workIncome = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month)
       .reduce((s,e)=> s + calcPay(e), 0);
     const monthlyManualIncome = ledgerEntries
-      .filter(e => ym(e.entry_date) === month && e.type === "income")
+      .filter(e => ym(e.entry_date) === month && e.type === "income" && e.category !== "대납정산")
+      .reduce((s, e) => s + Number(e.amount), 0);
+    const monthlyPass = ledgerEntries
+      .filter(e => ym(e.entry_date) === month && e.type === "income" && e.category === "대납정산")
       .reduce((s, e) => s + Number(e.amount), 0);
 
     const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
     const totalExpense = monthLedger.filter(e => !e.type || e.type === "expense").reduce((s,e)=> s+Number(e.amount), 0);
     
     const totalIncome = workIncome + monthlyManualIncome;
-    const balance = totalIncome - totalExpense;
+    // 잔액에는 대납정산도 포함 (실제로 들어온 돈이므로)
+    const balance = totalIncome + monthlyPass - totalExpense;
 
     document.getElementById("sumIncome").textContent = won(totalIncome);
     document.getElementById("sumExpense").textContent = won(totalExpense);
     document.getElementById("sumBalance").textContent = won(balance);
     document.getElementById("ledgerCntTag").textContent = monthLedger.length+"건";
+
+    // 대납 통과 금액 안내 (있을 때만 표시)
+    const passRow = document.getElementById("passRow");
+    if (monthlyPass > 0) {
+      document.getElementById("sumPass").textContent = won(monthlyPass);
+      passRow.style.display = "block";
+    } else {
+      passRow.style.display = "none";
+    }
 
     // 테이블 렌더링
     const workRows = workEntries
@@ -835,8 +856,13 @@ if (typeof window.supabase === 'undefined') {
       let h='<table><thead><tr><th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
       for(const r of viewRows){
         const d=new Date(r.date+"T00:00:00");
-        const badge = r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>';
-        const amtColor = r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700";
+        const isPass = (r.type==="income" && r.category==="대납정산");
+        const badge = isPass
+          ? '<span class="badge badge-pass">대납</span>'
+          : (r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>');
+        const amtColor = isPass
+          ? "color:var(--ink-soft);font-weight:700"
+          : (r.type==="income" ? "color:var(--income);font-weight:700" : "color:var(--expense);font-weight:700");
         
         let actionsHtml = "";
         if(r.editable) {
