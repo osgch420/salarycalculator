@@ -388,7 +388,7 @@ tr.row-selected { background:#f2f8f6; }
     </div>
     <div class="yearly-summary">
       <div class="y-stat"><span class="lbl">올해 실제 수입</span><span class="val in" id="yearlyIncome">0원</span></div>
-      <div class="y-stat"><span class="lbl">올해 총 지출</span><span class="val ex" id="yearlyExpense">0원</span></div>
+      <div class="y-stat"><span class="lbl">올해 실제 지출</span><span class="val ex" id="yearlyExpense">0원</span></div>
       <div class="y-stat bal"><span class="lbl">올해 잔액</span><span class="val" id="yearlyBalance">0원</span></div>
     </div>
   </div>
@@ -397,7 +397,7 @@ tr.row-selected { background:#f2f8f6; }
     <h2>이번 달 요약</h2>
     <div class="summary-grid">
       <div class="stat s-income"><div class="k">실제 수입 (알바 + 기타)</div><div class="v"><span id="sumIncome">0</span><small> 원</small></div></div>
-      <div class="stat s-expense"><div class="k">지출</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
+      <div class="stat s-expense"><div class="k">실제 지출 (대납 제외)</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
       <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
     </div>
     <div id="passRow" style="display:none; margin-top:12px; font-size:13px; color:var(--ink-soft); background:#f4f2ec; border-radius:9px; padding:10px 12px;">
@@ -667,7 +667,7 @@ if (typeof window.supabase === 'undefined') {
     }
   }
 
-  function calcHours() {
+  window.calcHours = function() {
     const sh = document.getElementById("startHour").value;
     const sm = document.getElementById("startMin").value;
     const eh = document.getElementById("endHour").value;
@@ -688,7 +688,7 @@ if (typeof window.supabase === 'undefined') {
     else el.className = "status-bar";
   }
 
-  function switchTab(tab){
+  window.switchTab = function(tab){
     document.querySelectorAll(".tab-panel").forEach(p=> p.classList.remove("active"));
     document.querySelectorAll(".tab-btn").forEach(b=> b.classList.remove("active"));
     document.getElementById("tab-"+tab).classList.add("active");
@@ -696,7 +696,7 @@ if (typeof window.supabase === 'undefined') {
     if(tab==="ledger") renderLedger();
   }
 
-  function changeCalMonth(dir) {
+  window.changeCalMonth = function(dir) {
     currentCalDate.setMonth(currentCalDate.getMonth() + dir);
     renderWork();
   }
@@ -1061,13 +1061,17 @@ if (typeof window.supabase === 'undefined') {
       .reduce((s, e) => s + Number(e.amount), 0);
     const totalYearlyIncome = yearlyWorkIncome + yearlyManualIncome;
       
-    // 연간 지출 합산
+    // 연간 지출 합산 (대납은 실제 지출이 아니라 통과 금액이므로 제외)
     const yearlyLedgerExpense = ledgerEntries
-      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense"))
+      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense") && e.category !== "대납")
+      .reduce((s, e) => s + Number(e.amount), 0);
+    // 대납 지출(카드값에 포함되어 실제로 나간 돈)은 잔액 계산에는 그대로 반영
+    const yearlyPassExpense = ledgerEntries
+      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense") && e.category === "대납")
       .reduce((s, e) => s + Number(e.amount), 0);
 
-    // 잔액에는 대납정산도 포함 (실제로 들어온 돈이므로)
-    const yearlyBalance = totalYearlyIncome + yearlyPass - yearlyLedgerExpense;
+    // 잔액에는 대납정산 수입도 포함하고, 대납 지출도 포함 (실제 돈의 흐름이므로)
+    const yearlyBalance = totalYearlyIncome + yearlyPass - yearlyLedgerExpense - yearlyPassExpense;
 
     document.getElementById("yearlyIncome").textContent = won(totalYearlyIncome) + "원";
     document.getElementById("yearlyExpense").textContent = won(yearlyLedgerExpense) + "원";
@@ -1097,11 +1101,14 @@ if (typeof window.supabase === 'undefined') {
       .reduce((s, e) => s + Number(e.amount), 0);
 
     const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
-    const totalExpense = monthLedger.filter(e => !e.type || e.type === "expense").reduce((s,e)=> s+Number(e.amount), 0);
+    // 실제 지출 (대납은 제외 — 통과 금액이라 실제 소비가 아님)
+    const totalExpense = monthLedger.filter(e => (!e.type || e.type === "expense") && e.category !== "대납").reduce((s,e)=> s+Number(e.amount), 0);
+    // 대납 지출 (카드값에 포함되어 실제로 나간 돈이므로 잔액에는 반영)
+    const monthlyPassExpense = monthLedger.filter(e => (!e.type || e.type === "expense") && e.category === "대납").reduce((s,e)=> s+Number(e.amount), 0);
     
     const totalIncome = workIncome + monthlyManualIncome;
-    // 잔액에는 대납정산도 포함 (실제로 들어온 돈이므로)
-    const balance = totalIncome + monthlyPass - totalExpense;
+    // 잔액에는 대납정산 수입과 대납 지출도 함께 반영 (실제 돈의 흐름이므로)
+    const balance = totalIncome + monthlyPass - totalExpense - monthlyPassExpense;
 
     document.getElementById("sumIncome").textContent = won(totalIncome);
     document.getElementById("sumExpense").textContent = won(totalExpense);
@@ -1132,7 +1139,7 @@ if (typeof window.supabase === 'undefined') {
       const prevTotalIncome = prevWorkIncome + prevManualIncome;
 
       const prevLedger = ledgerEntries.filter(e=> ym(e.entry_date)===prevMonth);
-      const prevExpense = prevLedger.filter(e => !e.type || e.type === "expense").reduce((s,e)=> s+Number(e.amount), 0);
+      const prevExpense = prevLedger.filter(e => (!e.type || e.type === "expense") && e.category !== "대납").reduce((s,e)=> s+Number(e.amount), 0);
 
       const momBox = document.getElementById("momCompare");
       const hasPrevData = (prevTotalIncome > 0 || prevExpense > 0);
@@ -1287,10 +1294,10 @@ if (typeof window.supabase === 'undefined') {
       updateBulkBar();
     }
 
-    // 카테고리 통계는 '지출'만 보여줍니다.
+    // 카테고리 통계는 '지출'만 보여줍니다. (대납은 실제 소비가 아니라 제외)
     const catMap={};
     for(const e of monthLedger){ 
-      if(!e.type || e.type === "expense") {
+      if((!e.type || e.type === "expense") && e.category !== "대납") {
         catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); 
       }
     }
@@ -1619,11 +1626,6 @@ if (typeof window.supabase === 'undefined') {
   document.getElementById("addLedgerBtn").onclick = addLedger;
   document.getElementById("wage").onchange = e=> saveSettings({wage:parseFloat(e.target.value)||0});
   document.getElementById("weekStart").onchange = e=> saveSettings({week_start:parseInt(e.target.value)});
-
-  // 전역 함수로 노출 (HTML onclick에서 호출)
-  window.switchTab = switchTab;
-  window.changeCalMonth = changeCalMonth;
-  window.calcHours = calcHours;
 
   // 초기 날짜 세팅
   const today=ymd(new Date());
