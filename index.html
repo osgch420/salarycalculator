@@ -202,6 +202,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .row-check { width:16px; height:16px; cursor:pointer; margin:0; }
 tr.row-selected { background:#f2f8f6; }
 
+.pass-gen-bar {
+  background:#fdf3e3; border-color:#e0b25a;
+}
+.pass-gen-bar .bulk-count { color:#9a5b1a; }
+
 /* 실행 취소 토스트 */
 .undo-toast {
   display:none; position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
@@ -509,6 +514,16 @@ tr.row-selected { background:#f2f8f6; }
       <button class="bulk-btn" onclick="bulkUpdateCategory()">항목 일괄 변경</button>
       <button class="bulk-btn bulk-del" onclick="bulkDelete()">일괄 삭제</button>
       <button class="bulk-btn bulk-clear" onclick="clearSelection()">선택 해제</button>
+    </div>
+
+    <!-- 대납정산 선택 시에만 나타나는 전용 막대: 대응 지출 자동 생성 -->
+    <div id="passGenBar" class="bulk-bar pass-gen-bar">
+      <span class="bulk-count">💡 선택한 <b id="passGenCount">0</b>건의 대납정산에 대응하는 '대납' 지출을 자동으로 만들 수 있습니다</span>
+      <label style="font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+        카드값 나가는 달
+        <input type="month" id="passGenDueMonth" style="width:auto; padding:6px 8px; font-size:13px;">
+      </label>
+      <button class="bulk-btn" onclick="generatePassExpenses()">대납 지출 자동 생성</button>
     </div>
 
     <div id="ledgerArea"><p class="empty">불러오는 중...</p></div>
@@ -1018,6 +1033,24 @@ if (typeof window.supabase === 'undefined') {
     if(prev && opts.includes(`value="${prev}"`)) sel.value = prev;
 
     bar.style.display = "flex";
+
+    // 선택된 항목이 전부 '대납정산'이면 대응 지출 자동생성 막대를 보여줌
+    const passGenBar = document.getElementById("passGenBar");
+    const allPass = picked.length > 0 && picked.every(e => e.type === "income" && e.category === "대납정산");
+    if(allPass){
+      document.getElementById("passGenCount").textContent = picked.length;
+      // 기본값: 선택된 건들 중 가장 늦은 날짜 기준 다음 달
+      const dueInput = document.getElementById("passGenDueMonth");
+      if(!dueInput.value){
+        const latest = picked.reduce((max,e)=> e.entry_date > max ? e.entry_date : max, picked[0].entry_date);
+        const d = new Date(latest + "T00:00:00");
+        const next = new Date(d.getFullYear(), d.getMonth()+1, 1);
+        dueInput.value = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,"0")}`;
+      }
+      passGenBar.style.display = "flex";
+    } else {
+      passGenBar.style.display = "none";
+    }
   }
 
   // 항목 일괄 변경
@@ -1078,6 +1111,51 @@ if (typeof window.supabase === 'undefined') {
         await loadAll();
       });
     }catch(err){ setStatus("ledgerStatus","일괄 삭제 실패: "+(err.message||err), true); }
+  };
+
+  // 선택된 '대납정산' 수입 건들과 짝이 되는 '대납' 지출을 자동 생성
+  window.generatePassExpenses = async function(){
+    const ids = [...selectedIds];
+    if(!ids.length) return;
+
+    const dueMonth = document.getElementById("passGenDueMonth").value;
+    if(!dueMonth){ alert("카드값 나가는 달을 선택하세요."); return; }
+
+    const picked = ledgerEntries.filter(e => ids.includes(String(e.id)));
+    const isAllPass = picked.length > 0 && picked.every(e => e.type === "income" && e.category === "대납정산");
+    if(!isAllPass){ alert("대납정산 건만 선택했을 때 사용할 수 있습니다."); return; }
+
+    if(!confirm(`선택한 ${picked.length}건과 같은 날짜·금액·메모로 '대납' 지출 ${picked.length}건을 만듭니다.\n카드값 나가는 달: ${dueMonth}\n계속할까요?`)) return;
+
+    try{
+      setStatus("ledgerStatus", "대납 지출 생성 중...");
+      const newExpenses = picked.map(e => ({
+        entry_date: e.entry_date,
+        type: "expense",
+        category: "대납",
+        amount: e.amount,
+        note: e.note || "",
+        card_due_month: dueMonth
+      }));
+
+      const {data, error} = await sb.from("ledger_entries").insert(newExpenses).select();
+      if(error) throw error;
+
+      selectedIds.clear();
+      document.getElementById("passGenDueMonth").value = "";
+      await loadAll();
+      setStatus("ledgerStatus", `대납 지출 ${picked.length}건을 생성했습니다.`);
+
+      // 실행 취소: 방금 만든 지출들을 다시 지움
+      if(data && data.length){
+        const newIds = data.map(d => d.id);
+        showUndoToast(`대납 지출 ${picked.length}건 생성을 취소할 수 있습니다.`, async ()=>{
+          const {error:re} = await sb.from("ledger_entries").delete().in("id", newIds);
+          if(re) throw re;
+          await loadAll();
+        });
+      }
+    }catch(err){ setStatus("ledgerStatus","대납 지출 생성 실패: "+(err.message||err), true); }
   };
 
   // 현재 화면에 보이는 편집 가능 행 id 저장용
