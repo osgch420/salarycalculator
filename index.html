@@ -424,6 +424,29 @@ tr.row-selected { background:#f2f8f6; }
       <div class="stat s-income"><div class="k">이미 받은 금액</div><div class="v"><span id="cardDueReceived">0</span><small> 원</small></div></div>
       <div class="stat" id="cardDuePendingBox"><div class="k">아직 못 받은 금액</div><div class="v"><span id="cardDuePending">0</span><small> 원</small></div></div>
     </div>
+
+    <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
+      <label for="cardBillInput">이번 달 카드값 총액 (청구서 나오면 입력, 안 나왔으면 예상 금액)</label>
+      <div class="row" style="margin-top:4px;">
+        <div class="field">
+          <input type="number" id="cardBillInput" min="0" placeholder="예: 80만원이면 80" oninput="calcNetUsage()">
+        </div>
+      </div>
+      <div id="netUsageResult" style="display:none; margin-top:12px;">
+        <div class="period-row">
+          <div class="label">카드값 총액</div>
+          <div class="amt" id="netBillTotal" style="color:var(--ink)">0원</div>
+        </div>
+        <div class="period-row">
+          <div class="label">− 대납분 (내 돈 아님)</div>
+          <div class="amt" style="color:var(--expense)" id="netDuePart">−0원</div>
+        </div>
+        <div class="period-row" style="border-top:2px solid var(--ink); margin-top:4px; padding-top:10px;">
+          <div class="label" style="font-weight:800">= 순수 내 실사용액</div>
+          <div class="amt" id="netUsageTotal" style="color:var(--accent); font-size:16px;">0원</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="card" id="ledgerInputCard">
@@ -842,6 +865,31 @@ if (typeof window.supabase === 'undefined') {
   // 가계부 여러 건 선택 상태
   let selectedIds = new Set();
 
+  // 이번 달 카드값에 포함된 대납 총액 (renderLedger에서 매번 갱신됨)
+  let currentMonthDuePart = 0;
+
+  // 카드값 총액 입력 → 대납분을 뺀 순수 실사용액 계산
+  window.calcNetUsage = function(){
+    const inputEl = document.getElementById("cardBillInput");
+    const resultEl = document.getElementById("netUsageResult");
+    if(!inputEl || !resultEl) return;
+
+    const raw = parseFloat(inputEl.value);
+    if(!raw || raw <= 0){
+      resultEl.style.display = "none";
+      return;
+    }
+    // 10만 미만 숫자는 만 원 단위로 자동 변환 (예: 80 -> 800000)
+    const bill = raw < 1000 ? raw * 10000 : raw;
+
+    const netUsage = Math.max(bill - currentMonthDuePart, 0);
+
+    document.getElementById("netBillTotal").textContent = won(bill) + "원";
+    document.getElementById("netDuePart").textContent = "−" + won(currentMonthDuePart) + "원";
+    document.getElementById("netUsageTotal").textContent = won(netUsage) + "원";
+    resultEl.style.display = "block";
+  };
+
   // ── 실행 취소 토스트 (공통) ──
   let undoTimer = null;
   let undoAction = null;
@@ -1202,8 +1250,13 @@ if (typeof window.supabase === 'undefined') {
 
         const pendingBox = document.getElementById("cardDuePendingBox");
         pendingBox.className = "stat " + (pending > 0 ? "s-pending" : "s-income");
+
+        // 순수 실사용액 계산기가 이 달의 대납 총액을 참조할 수 있도록 저장
+        currentMonthDuePart = dueTotal;
+        calcNetUsage();
       } else {
         cardDueCard.style.display = "none";
+        currentMonthDuePart = 0;
       }
     }
 
