@@ -534,19 +534,6 @@ if (typeof window.supabase === 'undefined') {
   let editingWorkId = null;
   let editingLedgerId = null;
 
-  // 가계부 카테고리 업데이트 함수
-  window.updateLedgerCat = function() {
-    const type = document.querySelector('input[name="ledgerType"]:checked').value;
-    const catSelect = document.getElementById("ledgerCat");
-    if(type === 'expense') {
-      catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="대납">대납 (대신 결제, 나중에 받을 돈)</option><option value="기타">기타</option>';
-    } else {
-      catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="대납정산">대납정산 (대신 결제하고 돌려받음)</option><option value="기타수입">기타수입</option>';
-    }
-    toggleCardDueMonth();
-  };
-  updateLedgerCat(); // 초기 실행
-
   // 항목이 '대납'일 때만 카드값 나가는 달 입력칸 표시
   window.toggleCardDueMonth = function(){
     const cat = document.getElementById("ledgerCat").value;
@@ -565,6 +552,19 @@ if (typeof window.supabase === 'undefined') {
       row.style.display = "none";
     }
   };
+
+  // 가계부 카테고리 업데이트 함수
+  window.updateLedgerCat = function() {
+    const type = document.querySelector('input[name="ledgerType"]:checked').value;
+    const catSelect = document.getElementById("ledgerCat");
+    if(type === 'expense') {
+      catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="대납">대납 (대신 결제, 나중에 받을 돈)</option><option value="기타">기타</option>';
+    } else {
+      catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="대납정산">대납정산 (대신 결제하고 돌려받음)</option><option value="기타수입">기타수입</option>';
+    }
+    toggleCardDueMonth();
+  };
+  updateLedgerCat(); // 초기 실행
 
   // 출근 시간: 09시(9) ~ 23시(23) 로만 구성
   let startHourOpts = '<option value="">시</option>';
