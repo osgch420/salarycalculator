@@ -95,6 +95,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .stat.s-income{background:#e6f0ee;color:var(--income)}
 .stat.s-expense{background:#fbeaea;color:var(--expense)}
 .stat.s-balance{background:#1f2328;color:#fff}
+.stat.s-pending{background:#fdf3e3;color:#9a5b1a}
 .stat .k{font-size:12px;opacity:.85;font-weight:600;margin-bottom:6px}
 .stat .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
 .stat .v small{font-size:12px;font-weight:600;opacity:.85}
@@ -414,6 +415,17 @@ tr.row-selected { background:#f2f8f6; }
     </div>
   </div>
 
+  <!-- 대납 현황 카드 (이번 달에 카드값으로 나가는 대납분 기준) -->
+  <div class="card" id="cardDueCard" style="display:none;">
+    <h2>🔁 이번 달 카드값에 포함된 대납 현황</h2>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">'카드값 나가는 달'을 이번 달로 지정한 대납 지출 기준입니다.</p>
+    <div class="summary-grid">
+      <div class="stat s-accent"><div class="k">이번 카드값에 포함된 대납</div><div class="v"><span id="cardDueTotal">0</span><small> 원</small></div></div>
+      <div class="stat s-income"><div class="k">이미 받은 금액</div><div class="v"><span id="cardDueReceived">0</span><small> 원</small></div></div>
+      <div class="stat" id="cardDuePendingBox"><div class="k">아직 못 받은 금액</div><div class="v"><span id="cardDuePending">0</span><small> 원</small></div></div>
+    </div>
+  </div>
+
   <div class="card" id="ledgerInputCard">
     <h2 id="ledgerFormTitle">내역 추가</h2>
     
@@ -435,9 +447,16 @@ tr.row-selected { background:#f2f8f6; }
       </div>
       <div class="field">
         <label for="ledgerCat">항목</label>
-        <select id="ledgerCat">
+        <select id="ledgerCat" onchange="toggleCardDueMonth()">
           <!-- 스크립트로 자동 변경됨 -->
         </select>
+      </div>
+    </div>
+    <div class="row" id="cardDueRow" style="display:none;">
+      <div class="field">
+        <label for="cardDueMonth">카드값 나가는 달</label>
+        <input type="month" id="cardDueMonth">
+        <small style="font-size:11px;color:var(--ink-soft);display:block;margin-top:2px;">* 이 대납분이 실제로 카드값으로 빠지는 달입니다 (보통 다음 달)</small>
       </div>
     </div>
     <div class="row">
@@ -520,12 +539,32 @@ if (typeof window.supabase === 'undefined') {
     const type = document.querySelector('input[name="ledgerType"]:checked').value;
     const catSelect = document.getElementById("ledgerCat");
     if(type === 'expense') {
-      catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="기타">기타</option>';
+      catSelect.innerHTML = '<option value="카드비">카드비</option><option value="식비">식비</option><option value="쇼핑">쇼핑</option><option value="교통비">교통비</option><option value="통신비">통신비</option><option value="구독료">구독료</option><option value="의료비">의료비</option><option value="문화/여가">문화/여가</option><option value="대납">대납 (대신 결제, 나중에 받을 돈)</option><option value="기타">기타</option>';
     } else {
       catSelect.innerHTML = '<option value="용돈">용돈</option><option value="월급">월급</option><option value="보너스">보너스</option><option value="대납정산">대납정산 (대신 결제하고 돌려받음)</option><option value="기타수입">기타수입</option>';
     }
+    toggleCardDueMonth();
   };
   updateLedgerCat(); // 초기 실행
+
+  // 항목이 '대납'일 때만 카드값 나가는 달 입력칸 표시
+  window.toggleCardDueMonth = function(){
+    const cat = document.getElementById("ledgerCat").value;
+    const row = document.getElementById("cardDueRow");
+    if(!row) return;
+    if(cat === "대납"){
+      row.style.display = "flex";
+      // 기본값: 다음 달로 자동 채워두기 (비어있을 때만)
+      const input = document.getElementById("cardDueMonth");
+      if(!input.value){
+        const d = document.getElementById("ledgerDate").value ? new Date(document.getElementById("ledgerDate").value+"T00:00:00") : new Date();
+        const next = new Date(d.getFullYear(), d.getMonth()+1, 1);
+        input.value = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,"0")}`;
+      }
+    } else {
+      row.style.display = "none";
+    }
+  };
 
   // 출근 시간: 09시(9) ~ 23시(23) 로만 구성
   let startHourOpts = '<option value="">시</option>';
@@ -855,10 +894,10 @@ if (typeof window.supabase === 'undefined') {
         (e.actual_pay!==null&&e.actual_pay!==undefined)?e.actual_pay:"", csvEscape(e.note)].join(",") + "\n";
     });
 
-    let ledgerCsv = "구분,날짜,수입지출,항목,금액,메모\n";
+    let ledgerCsv = "구분,날짜,수입지출,항목,금액,메모,카드값나가는달\n";
     [...ledgerEntries].sort((a,b)=> a.entry_date<b.entry_date?-1:1).forEach(e=>{
       ledgerCsv += ["가계부", e.entry_date, (e.type||"expense")==="income"?"수입":"지출",
-        csvEscape(e.category), e.amount, csvEscape(e.note)].join(",") + "\n";
+        csvEscape(e.category), e.amount, csvEscape(e.note), e.card_due_month||""].join(",") + "\n";
     });
 
     const bom = "\uFEFF"; // 엑셀 한글 깨짐 방지
@@ -879,7 +918,7 @@ if (typeof window.supabase === 'undefined') {
   };
 
   // 전체 카테고리 목록 (일괄 변경용)
-  const EXPENSE_CATS = ["카드비","식비","쇼핑","교통비","통신비","구독료","의료비","문화/여가","기타"];
+  const EXPENSE_CATS = ["카드비","식비","쇼핑","교통비","통신비","구독료","의료비","문화/여가","대납","기타"];
   const INCOME_CATS  = ["용돈","월급","보너스","대납정산","기타수입"];
 
   // 개별 행 체크
@@ -1125,6 +1164,42 @@ if (typeof window.supabase === 'undefined') {
       }
     }
 
+    // ── 대납 현황 (이번 달에 카드값으로 나가는 대납분 기준) ──
+    {
+      // '대납' 지출 중 card_due_month가 이번 달인 것들
+      const dueEntries = ledgerEntries.filter(e =>
+        (!e.type || e.type === "expense") && e.category === "대납" && e.card_due_month === month
+      );
+      const dueTotal = dueEntries.reduce((s,e)=> s + Number(e.amount), 0);
+
+      // 같은 기간(이번 달) 안에 들어온 대납정산 수입 — 단순화를 위해
+      // '대납' 지출을 기록한 그 달(entry_date)에 받은 대납정산을 기준으로 매칭
+      // (지출 건들이 발생한 달들을 모아, 그 달들에 들어온 대납정산 총액을 봄)
+      const relatedMonths = new Set(dueEntries.map(e => ym(e.entry_date)));
+      let receivedTotal = 0;
+      relatedMonths.forEach(mo => {
+        receivedTotal += ledgerEntries
+          .filter(e => e.type === "income" && e.category === "대납정산" && ym(e.entry_date) === mo)
+          .reduce((s,e)=> s + Number(e.amount), 0);
+      });
+      // 받은 금액이 이번 카드값에 포함된 대납 총액보다 많을 순 있으니 상한을 둠
+      const cappedReceived = Math.min(receivedTotal, dueTotal);
+      const pending = Math.max(dueTotal - cappedReceived, 0);
+
+      const cardDueCard = document.getElementById("cardDueCard");
+      if(dueTotal > 0){
+        cardDueCard.style.display = "block";
+        document.getElementById("cardDueTotal").textContent = won(dueTotal);
+        document.getElementById("cardDueReceived").textContent = won(cappedReceived);
+        document.getElementById("cardDuePending").textContent = won(pending);
+
+        const pendingBox = document.getElementById("cardDuePendingBox");
+        pendingBox.className = "stat " + (pending > 0 ? "s-pending" : "s-income");
+      } else {
+        cardDueCard.style.display = "none";
+      }
+    }
+
     // 테이블 렌더링
     const workRows = workEntries
       .filter(e=> ym(e.payment_date || e.date)===month && calcPay(e) > 0)
@@ -1289,6 +1364,7 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("ledgerDate").value = ymd(new Date());
     document.getElementById("ledgerAmt").value = "";
     document.getElementById("ledgerNote").value = "";
+    document.getElementById("cardDueMonth").value = "";
     
     document.getElementById("addLedgerBtn").textContent = "기록 추가";
     document.getElementById("cancelLedgerBtn").style.display = "none";
@@ -1368,6 +1444,8 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("ledgerCat").value = entry.category;
     document.getElementById("ledgerAmt").value = entry.amount;
     document.getElementById("ledgerNote").value = entry.note || "";
+    toggleCardDueMonth();
+    document.getElementById("cardDueMonth").value = entry.card_due_month || "";
 
     document.getElementById("ledgerFormTitle").textContent = "내역 수정 모드";
     document.getElementById("addLedgerBtn").textContent = "수정 완료";
@@ -1481,6 +1559,14 @@ if (typeof window.supabase === 'undefined') {
     
     try{
       const submitData = {entry_date, type: ledgerType, category, amount, note};
+
+      // '대납' 지출이면 카드값 나가는 달을 함께 저장
+      if(ledgerType === "expense" && category === "대납"){
+        const dueMonth = document.getElementById("cardDueMonth").value;
+        submitData.card_due_month = dueMonth || null;
+      } else {
+        submitData.card_due_month = null;
+      }
 
       if (editingLedgerId) {
         const {error}=await sb.from("ledger_entries").update(submitData).eq("id", editingLedgerId);
