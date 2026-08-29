@@ -558,7 +558,7 @@ if (typeof window.supabase === 'undefined') {
 } else {
 
   const SUPABASE_URL = "https://jzvwofjmfislljxofivk.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6ImpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6dndvZmptZmlzbGxqeG9maXZrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MjE3MjIsImV4cCI6MjA5NzE5NzcyMn0.IHL8tF0y2ljufqFAAeK5eO7Uaa0envcL_cHHvFE8RY0";
 
   const DAYS = ["일","월","화","수","목","금","토"];
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1297,17 +1297,15 @@ if (typeof window.supabase === 'undefined') {
       }
     }
 
-    // ── 대납 현황 (이번 달에 카드값으로 나가는 대납분 기준) ──
+    // ── 대납 현황 및 카드비 순수 실사용액 계산 ──
     {
-      // '대납' 지출 중 card_due_month가 이번 달인 것들
+      // 1. 이번 달 카드값으로 지정된 대납 지출 조회
       const dueEntries = ledgerEntries.filter(e =>
         (!e.type || e.type === "expense") && e.category === "대납" && e.card_due_month === month
       );
       const dueTotal = dueEntries.reduce((s,e)=> s + Number(e.amount), 0);
 
-      // 같은 기간(이번 달) 안에 들어온 대납정산 수입 — 단순화를 위해
-      // '대납' 지출을 기록한 그 달(entry_date)에 받은 대납정산을 기준으로 매칭
-      // (지출 건들이 발생한 달들을 모아, 그 달들에 들어온 대납정산 총액을 봄)
+      // 2. 받은 대납정산 수입 조회
       const relatedMonths = new Set(dueEntries.map(e => ym(e.entry_date)));
       let receivedTotal = 0;
       relatedMonths.forEach(mo => {
@@ -1315,27 +1313,34 @@ if (typeof window.supabase === 'undefined') {
           .filter(e => e.type === "income" && e.category === "대납정산" && ym(e.entry_date) === mo)
           .reduce((s,e)=> s + Number(e.amount), 0);
       });
-      // 받은 금액이 이번 카드값에 포함된 대납 총액보다 많을 순 있으니 상한을 둠
       const cappedReceived = Math.min(receivedTotal, dueTotal);
       const pending = Math.max(dueTotal - cappedReceived, 0);
 
+      // 3. 카드 영역 항상 표시 (대납이 0원이어도 표시됨)
       const cardDueCard = document.getElementById("cardDueCard");
-      if(dueTotal > 0){
-        cardDueCard.style.display = "block";
-        document.getElementById("cardDueTotal").textContent = won(dueTotal);
-        document.getElementById("cardDueReceived").textContent = won(cappedReceived);
-        document.getElementById("cardDuePending").textContent = won(pending);
+      cardDueCard.style.display = "block";
 
-        const pendingBox = document.getElementById("cardDuePendingBox");
-        pendingBox.className = "stat " + (pending > 0 ? "s-pending" : "s-income");
+      document.getElementById("cardDueTotal").textContent = won(dueTotal);
+      document.getElementById("cardDueReceived").textContent = won(cappedReceived);
+      document.getElementById("cardDuePending").textContent = won(pending);
 
-        // 순수 실사용액 계산기가 이 달의 대납 총액을 참조할 수 있도록 저장
-        currentMonthDuePart = dueTotal;
-        calcNetUsage();
+      const pendingBox = document.getElementById("cardDuePendingBox");
+      pendingBox.className = "stat " + (pending > 0 ? "s-pending" : "s-income");
+
+      currentMonthDuePart = dueTotal;
+
+      // 4. 가계부 내역 중 이번 달 '카드비' 지출이 등록되어 있으면 자동으로 입력란에 채워넣음
+      const cardBillEntry = monthLedger.find(e => (!e.type || e.type === "expense") && e.category === "카드비");
+      const billInput = document.getElementById("cardBillInput");
+      
+      if (cardBillEntry) {
+        billInput.value = cardBillEntry.amount;
       } else {
-        cardDueCard.style.display = "none";
-        currentMonthDuePart = 0;
+        billInput.value = ""; // 등록된 카드비 내역이 없으면 비움
       }
+
+      // 실사용액 자동 계산
+      calcNetUsage();
     }
 
     // 테이블 렌더링
