@@ -448,7 +448,7 @@ tr.row-selected { background:#f2f8f6; }
         <div class="amt" id="netBillTotal" style="color:var(--ink)">0원</div>
       </div>
       <div class="period-row">
-        <div class="label">− 대납분 (내 돈 아님)</div>
+        <div class="label">− 대납분 (내 돈 아님) <button type="button" class="btn-ghost" id="dueDetailLink" style="display:none;font-size:11px;padding:2px 8px;margin-left:6px;vertical-align:middle;" onclick="openDueDetail()">내역 보기</button></div>
         <div class="amt" style="color:var(--expense)" id="netDuePart">−0원</div>
       </div>
       <div class="period-row" style="border-top:2px solid var(--ink); margin-top:4px; padding-top:10px;">
@@ -468,6 +468,8 @@ tr.row-selected { background:#f2f8f6; }
         <div class="stat s-income"><div class="k">이미 받은 금액</div><div class="v"><span id="cardDueReceived">0</span><small> 원</small></div></div>
         <div class="stat" id="cardDuePendingBox"><div class="k">아직 못 받은 금액</div><div class="v"><span id="cardDuePending">0</span><small> 원</small></div></div>
       </div>
+      <button type="button" class="btn-ghost" id="dueDetailBtn" style="font-size:13px;padding:8px 14px;margin-top:12px;" onclick="toggleDueDetail()">포함된 대납 내역 보기 ▾</button>
+      <div id="dueDetailBox" style="display:none;margin-top:10px;"></div>
     </div>
   </div>
 
@@ -530,6 +532,7 @@ tr.row-selected { background:#f2f8f6; }
   <div class="card">
     <h2>전체 내역 <span class="tag" id="ledgerCntTag">0건</span></h2>
     <input type="text" id="ledgerSearch" placeholder="메모 또는 항목 검색 (예: 마트, 카드비)" style="margin-bottom:12px" oninput="renderLedger()">
+    <div id="ledgerSearchSum" style="display:none;font-size:13px;color:var(--ink-soft);margin:-4px 0 12px;"></div>
 
     <!-- 여러 건 선택 시 나타나는 작업 막대 -->
     <div id="bulkBar" class="bulk-bar">
@@ -906,6 +909,60 @@ if (typeof window.supabase === 'undefined') {
 
   // 이번 달 카드값에 포함된 대납 총액 (renderLedger에서 매번 갱신됨)
   let currentMonthDuePart = 0;
+  let currentMonthDueEntries = [];   // 그 총액을 이루는 대납 지출 건들
+  let dueDetailOpen = false;         // 대납 내역 표 펼침 여부
+
+  function monthLabel(mo){
+    const [y, m] = mo.split("-").map(Number);
+    return `${y}년 ${m}월`;
+  }
+
+  // 이번 달 카드값에 포함된 대납 건들을 표로 (지출한 날 / 메모 / 나가는 달 / 금액 + 합계)
+  function renderDueDetail(){
+    const btn = document.getElementById("dueDetailBtn");
+    const box = document.getElementById("dueDetailBox");
+    const link = document.getElementById("dueDetailLink");
+    if(!btn || !box) return;
+
+    const list = [...currentMonthDueEntries].sort((a,b)=> a.entry_date < b.entry_date ? -1 : 1);
+    const n = list.length;
+    if(link) link.style.display = n ? "inline-block" : "none";
+    btn.textContent = `포함된 대납 ${n}건 내역 ${dueDetailOpen ? "접기 ▴" : "보기 ▾"}`;
+
+    if(!n || !dueDetailOpen){ box.style.display = "none"; return; }
+
+    let h = '<table><thead><tr><th>지출한 날</th><th>메모</th><th>나가는 달</th><th class="num">금액</th></tr></thead><tbody>';
+    for(const e of list){
+      const dueLabel = e.card_due_month
+        ? monthLabel(e.card_due_month)
+        : `${monthLabel(nextMonthOf(e.entry_date))} <span style="font-size:11px;color:var(--ink-soft)">(미지정 → 쓴 다음 달)</span>`;
+      h += `<tr>
+        <td>${e.entry_date}</td>
+        <td style="font-size:13px;color:var(--ink-soft)">${e.note || ""}</td>
+        <td style="font-size:13px">${dueLabel}</td>
+        <td class="num" style="color:var(--expense);font-weight:700">${won(Number(e.amount))}원</td>
+      </tr>`;
+    }
+    h += `<tr>
+      <td colspan="3" style="font-weight:800">합계 ${n}건</td>
+      <td class="num" style="font-weight:800;color:var(--expense)">${won(currentMonthDuePart)}원</td>
+    </tr>`;
+    box.innerHTML = h + '</tbody></table>';
+    box.style.display = "block";
+  }
+
+  window.toggleDueDetail = function(){
+    dueDetailOpen = !dueDetailOpen;
+    renderDueDetail();
+  };
+
+  // 계산 결과의 '− 대납분' 옆 버튼: 내역을 펼치고 그 자리로 이동
+  window.openDueDetail = function(){
+    dueDetailOpen = true;
+    renderDueDetail();
+    const box = document.getElementById("dueDetailBox");
+    if(box) box.scrollIntoView({behavior:"smooth", block:"center"});
+  };
 
   // ── 월별 카드값 (Supabase card_bills 표에 달마다 따로 저장) ──
   let cardBills = {};            // 예: { "2026-08": 800000, "2026-07": 650000 }
@@ -1546,6 +1603,8 @@ if (typeof window.supabase === 'undefined') {
 
       // 순수 실사용액 계산이 이 달의 대납 총액을 참조할 수 있도록 저장 (대납이 없으면 0)
       currentMonthDuePart = dueTotal;
+      currentMonthDueEntries = dueEntries;
+      renderDueDetail();
       // 카드값 카드는 대납 유무와 상관없이 항상 표시 + 저장된 이 달 카드값으로 갱신
       renderCardBill(month);
     }
@@ -1581,6 +1640,19 @@ if (typeof window.supabase === 'undefined') {
       ? allRows.filter(r => (r.note||"").toLowerCase().includes(q) || (r.category||"").toLowerCase().includes(q))
       : allRows;
     if(q) document.getElementById("ledgerCntTag").textContent = viewRows.length + "건 검색됨";
+
+    // 검색 중일 때 결과 합계 (지출·수입 따로) — 예: '대납' 검색 시 대납 지출과 대납정산 수입이 섞여도 구분됨
+    const sumEl = document.getElementById("ledgerSearchSum");
+    if(sumEl){
+      if(q && viewRows.length){
+        const exp = viewRows.filter(r => r.type !== "income").reduce((s,r)=> s + Number(r.amount), 0);
+        const inc = viewRows.filter(r => r.type === "income").reduce((s,r)=> s + Number(r.amount), 0);
+        sumEl.innerHTML = `검색 결과 합계 — <b style="color:var(--expense)">지출 ${won(exp)}원</b> · <b style="color:var(--income)">수입 ${won(inc)}원</b>`;
+        sumEl.style.display = "block";
+      } else {
+        sumEl.style.display = "none";
+      }
+    }
 
     const la = document.getElementById("ledgerArea");
     if(!viewRows.length){
