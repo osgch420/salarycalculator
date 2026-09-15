@@ -405,6 +405,9 @@ tr.row-selected { background:#f2f8f6; }
       <div class="stat s-expense"><div class="k">실제 지출 (대납 제외)</div><div class="v"><span id="sumExpense">0</span><small> 원</small></div></div>
       <div class="stat s-balance"><div class="k">잔액</div><div class="v"><span id="sumBalance">0</span><small> 원</small></div></div>
     </div>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:12px;">카드비는 청구서 총액으로 입력합니다. 실제 지출에서는 '카드값 나가는 달'에 맞춰 대납분을 빼고, 잔액에서는 카드비 총액을 한 번 차감합니다.</p>
+    <div id="expenseCalcNote" style="display:none;margin-top:8px;font-size:13px;color:var(--accent);"></div>
+    <div id="expenseCheckNote" style="display:none;margin-top:8px;font-size:13px;color:var(--danger);"></div>
     <div id="passRow" style="display:none; margin-top:12px; font-size:13px; color:var(--ink-soft); background:#f4f2ec; border-radius:9px; padding:10px 12px;">
       🔁 대납 통과 금액 <b id="sumPass" style="color:var(--ink)">0</b>원 — 대신 결제하고 돌려받은 돈입니다. 실제 수입에는 포함되지 않지만 잔액 계산에는 반영됩니다.
     </div>
@@ -423,7 +426,7 @@ tr.row-selected { background:#f2f8f6; }
   <!-- 카드값 & 순수 실사용액 (달마다 따로 저장됨) -->
   <div class="card" id="cardBillCard">
     <h2>💳 <span id="cardBillTitle">이번 달</span> 카드값 · 순수 실사용액</h2>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">청구서가 나오면 카드값 총액을 적어두세요. 달마다 따로 저장되어 월을 바꾸거나 새로고침해도 그대로 남습니다.</p>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">청구서 총액을 비교용으로 저장하는 곳입니다. 월별·연간 요약에는 내역 추가에서 입력한 '카드비' 지출만 반영되므로, 여기에 같은 금액을 저장해도 지출이 늘어나지 않습니다.</p>
 
     <div class="row">
       <div class="field">
@@ -995,6 +998,35 @@ if (typeof window.supabase === 'undefined') {
       .reduce((s,e)=> s + Number(e.amount), 0);
   }
 
+  // 카드비는 청구서 총액, 대납은 그 안에 포함된 금액을 구분하는 기록이다.
+  // 소비 금액과 현금 유출을 구분하며, card_bills의 비교용 저장값은 합산하지 않는다.
+  function expenseSummaryOfMonth(month){
+    const byCategory = Object.create(null);
+    let cardBill = 0;
+    let otherExpense = 0;
+    for(const e of ledgerEntries){
+      if(ym(e.entry_date) !== month || (e.type && e.type !== "expense") || e.category === "대납") continue;
+      const amount = Number(e.amount);
+      if(e.category === "카드비"){
+        cardBill += amount;
+      } else {
+        otherExpense += amount;
+        byCategory[e.category] = (byCategory[e.category] || 0) + amount;
+      }
+    }
+    // entry_date가 전년도여도 실제 청구되는 달의 카드비에서 제외한다.
+    const due = duePartOfMonth(month);
+    const deductedDue = Math.min(due, cardBill);
+    const ownCardExpense = cardBill - deductedDue;
+    if(cardBill > 0) byCategory["카드비"] = ownCardExpense;
+    return {
+      cardBill, due, deductedDue, ownCardExpense, otherExpense, byCategory,
+      actualExpense: otherExpense + ownCardExpense,
+      cashExpense: otherExpense + cardBill,
+      needsReview: due > cardBill
+    };
+  }
+
   // 입력값 정리: 1000 미만 숫자는 만 원 단위로 변환 (예: 80 -> 800000)
   function normalizeBill(raw){
     const v = parseFloat(raw);
@@ -1456,17 +1488,15 @@ if (typeof window.supabase === 'undefined') {
       .reduce((s, e) => s + Number(e.amount), 0);
     const totalYearlyIncome = yearlyWorkIncome + yearlyManualIncome;
       
-    // 연간 지출 합산 (대납은 실제 지출이 아니라 통과 금액이므로 제외)
-    const yearlyLedgerExpense = ledgerEntries
-      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense") && e.category !== "대납")
-      .reduce((s, e) => s + Number(e.amount), 0);
-    // 대납 지출(카드값에 포함되어 실제로 나간 돈)은 잔액 계산에는 그대로 반영
-    const yearlyPassExpense = ledgerEntries
-      .filter(e => e.entry_date.startsWith(year) && (!e.type || e.type === "expense") && e.category === "대납")
-      .reduce((s, e) => s + Number(e.amount), 0);
-
-    // 잔액에는 대납정산 수입도 포함하고, 대납 지출도 포함 (실제 돈의 흐름이므로)
-    const yearlyBalance = totalYearlyIncome + yearlyPass - yearlyLedgerExpense - yearlyPassExpense;
+    // 연간 지출은 같은 기준으로 계산한 12개월 합계다.
+    const yearlyMonths = Array.from({length:12}, (_, i) => ({
+      month: `${year}-${String(i + 1).padStart(2, "0")}`,
+      summary: expenseSummaryOfMonth(`${year}-${String(i + 1).padStart(2, "0")}`)
+    }));
+    const yearlyLedgerExpense = yearlyMonths.reduce((sum, item) => sum + item.summary.actualExpense, 0);
+    const yearlyCashExpense = yearlyMonths.reduce((sum, item) => sum + item.summary.cashExpense, 0);
+    // 대납정산은 현금 유입, 대납 기록 자체는 추가 현금 유출이 아니다.
+    const yearlyBalance = totalYearlyIncome + yearlyPass - yearlyCashExpense;
 
     document.getElementById("yearlyIncome").textContent = won(totalYearlyIncome) + "원";
     document.getElementById("yearlyExpense").textContent = won(yearlyLedgerExpense) + "원";
@@ -1496,14 +1526,21 @@ if (typeof window.supabase === 'undefined') {
       .reduce((s, e) => s + Number(e.amount), 0);
 
     const monthLedger = ledgerEntries.filter(e=> ym(e.entry_date)===month);
-    // 실제 지출 (대납은 제외 — 통과 금액이라 실제 소비가 아님)
-    const totalExpense = monthLedger.filter(e => (!e.type || e.type === "expense") && e.category !== "대납").reduce((s,e)=> s+Number(e.amount), 0);
-    // 대납 지출 (카드값에 포함되어 실제로 나간 돈이므로 잔액에는 반영)
-    const monthlyPassExpense = monthLedger.filter(e => (!e.type || e.type === "expense") && e.category === "대납").reduce((s,e)=> s+Number(e.amount), 0);
-    
+    const monthExpense = expenseSummaryOfMonth(month);
+    const totalExpense = monthExpense.actualExpense;
     const totalIncome = workIncome + monthlyManualIncome;
-    // 잔액에는 대납정산 수입과 대납 지출도 함께 반영 (실제 돈의 흐름이므로)
-    const balance = totalIncome + monthlyPass - totalExpense - monthlyPassExpense;
+    const balance = totalIncome + monthlyPass - monthExpense.cashExpense;
+
+    const calcNote = document.getElementById("expenseCalcNote");
+    calcNote.style.display = monthExpense.cardBill > 0 ? "block" : "none";
+    calcNote.textContent = `카드비 ${won(monthExpense.cardBill)}원 − 포함된 대납 ${won(monthExpense.deductedDue)}원 = 본인 카드 지출 ${won(monthExpense.ownCardExpense)}원`;
+    // 대납분이 청구액보다 커도 다른 지출이나 다른 달의 카드비에서 빼지 않는다.
+    const reviewMonths = yearlyMonths.filter(item => item.summary.needsReview);
+    const checkNote = document.getElementById("expenseCheckNote");
+    checkNote.style.display = reviewMonths.length ? "block" : "none";
+    checkNote.textContent = reviewMonths.length
+      ? `확인 필요: ${reviewMonths.map(item => monthLabel(item.month)).join(", ")}의 대납분이 입력한 카드비보다 큽니다. 카드비 누락, 대납 중복 또는 '카드값 나가는 달'을 확인하세요. 해당 달의 카드 지출은 0원까지만 낮추었으며 연간 합계도 확인이 필요합니다.`
+      : "";
 
     document.getElementById("sumIncome").textContent = won(totalIncome);
     document.getElementById("sumExpense").textContent = won(totalExpense);
@@ -1533,8 +1570,7 @@ if (typeof window.supabase === 'undefined') {
         .reduce((s, e) => s + Number(e.amount), 0);
       const prevTotalIncome = prevWorkIncome + prevManualIncome;
 
-      const prevLedger = ledgerEntries.filter(e=> ym(e.entry_date)===prevMonth);
-      const prevExpense = prevLedger.filter(e => (!e.type || e.type === "expense") && e.category !== "대납").reduce((s,e)=> s+Number(e.amount), 0);
+      const prevExpense = expenseSummaryOfMonth(prevMonth).actualExpense;
 
       const momBox = document.getElementById("momCompare");
       const hasPrevData = (prevTotalIncome > 0 || prevExpense > 0);
@@ -1647,7 +1683,7 @@ if (typeof window.supabase === 'undefined') {
       if(q && viewRows.length){
         const exp = viewRows.filter(r => r.type !== "income").reduce((s,r)=> s + Number(r.amount), 0);
         const inc = viewRows.filter(r => r.type === "income").reduce((s,r)=> s + Number(r.amount), 0);
-        sumEl.innerHTML = `검색 결과 합계 — <b style="color:var(--expense)">지출 ${won(exp)}원</b> · <b style="color:var(--income)">수입 ${won(inc)}원</b>`;
+        sumEl.innerHTML = `입력 금액 합계 (대납 포함) — <b style="color:var(--expense)">지출 ${won(exp)}원</b> · <b style="color:var(--income)">수입 ${won(inc)}원</b>`;
         sumEl.style.display = "block";
       } else {
         sumEl.style.display = "none";
@@ -1674,7 +1710,7 @@ if (typeof window.supabase === 'undefined') {
         + '<th>날짜</th><th>구분</th><th>항목</th><th class="num">금액</th><th>메모</th><th></th></tr></thead><tbody>';
       for(const r of viewRows){
         const d=new Date(r.date+"T00:00:00");
-        const isPass = (r.type==="income" && r.category==="대납정산");
+        const isPass = (r.type==="income" && r.category==="대납정산") || (r.type==="expense" && r.category==="대납");
         const badge = isPass
           ? '<span class="badge badge-pass">대납</span>'
           : (r.type==="income" ? '<span class="badge badge-in">수입</span>' : '<span class="badge badge-ex">지출</span>');
@@ -1709,20 +1745,15 @@ if (typeof window.supabase === 'undefined') {
       updateBulkBar();
     }
 
-    // 카테고리 통계는 '지출'만 보여줍니다. (대납은 실제 소비가 아니라 제외)
-    const catMap={};
-    for(const e of monthLedger){ 
-      if((!e.type || e.type === "expense") && e.category !== "대납") {
-        catMap[e.category]=(catMap[e.category]||0)+Number(e.amount); 
-      }
-    }
+    // 항목별 합계도 상단 실제 지출과 같은 본인 부담 금액을 사용한다.
+    const catMap = monthExpense.byCategory;
     const catArea=document.getElementById("catArea");
     const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
     if(!cats.length){ catArea.innerHTML='<p class="empty">지출 내역이 없습니다.</p>'; }
     else{
       catArea.innerHTML=cats.map(([cat,amt])=>`
         <div class="period-row">
-          <div class="label">${cat}</div>
+          <div class="label">${cat === "카드비" ? "카드비 (대납 제외)" : cat}</div>
           <div class="amt">${won(amt)}원</div>
         </div>`).join("");
     }
@@ -2066,3 +2097,4 @@ if (typeof window.supabase === 'undefined') {
 </script>
 </body>
 </html>
+
