@@ -456,7 +456,7 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
     </div>
     <div style="margin-top:16px"><label id="instSelectedMonthLabel">선택한 달에 아직 드릴 금액</label><div class="money" id="instMonthDue" style="font-size:20px">0원</div></div>
     <p id="instOverdue" style="font-size:13px;color:var(--danger)"></p>
-    <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">등록한 할부는 예정월 1일부터 가계부 지출과 잔액에 자동 반영됩니다. 미래 회차는 그 달이 되면 반영됩니다. 지급 기록은 실제 드린 금액 확인용이며, 저장하면 자동 반영분을 대체합니다. 일반 지출에 따로 입력하지 마세요.</p>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">등록한 할부는 예정월 1일부터 가계부 지출과 잔액에 자동 반영됩니다. 미래 회차는 그 달이 되면 반영됩니다. 지급 확인은 실제 드린 날짜와 금액만 기록합니다. 늦게 확인해도 지출은 원래 할부 예정월에 그대로 남습니다. 일반 지출에 따로 입력하지 마세요.</p>
   </div>
 
   <details class="card" id="instNewDetails">
@@ -505,6 +505,7 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
 
   <div class="card" id="instPaymentCard" hidden>
     <h2 id="instPaymentTitle">지급 기록</h2>
+    <p id="instPaymentMonthNotice" style="font-size:13px;color:var(--accent)"></p>
     <form id="instPaymentForm" onsubmit="saveInstallmentPayment(event)">
       <input type="hidden" id="instPaymentId">
       <div class="row">
@@ -1246,6 +1247,7 @@ if (typeof window.supabase === 'undefined') {
       const payments=slots.filter(r=>instMeta(r).key===meta.key).sort((a,b)=>instMeta(a).sequence-instMeta(b).sequence).map(slot=>{
         const m=instMeta(slot),sourceId=m.source_entry_id;
         const copy={...slot,_storedRow:slot,_sourceId:sourceId?String(sourceId):null,_linked:false,_linkError:""};
+        if(Number(slot.amount)>0) copy.entry_date=instValidDate(m.paid_date)?m.paid_date:slot.entry_date;
         if(sourceId){
           const source=ledger.find(e=>String(e.id)===String(sourceId));
           if(Number(slot.amount)!==0) copy._linkError="지급 기록과 기존 지출이 함께 연결되어 있습니다.";
@@ -1268,7 +1270,7 @@ if (typeof window.supabase === 'undefined') {
       return {row,meta,payments,paid,remaining,paidCount:payments.filter(r=>Number(r.amount)>0).length,inconsistent,adjusted:delta!==0&&unpaid.length>0};
     }).sort((a,b)=>Number(b.row.id)-Number(a.row.id));
   }
-  function instPlans(){return buildInstPlans(installmentRecords,ledgerEntries);}
+  function instPlans(){return buildInstPlans(installmentRecords,installmentBaseLedger);}
   function instPlanForPayment(id){return instPlans().find(p=>p.payments.some(r=>String(r.id)===String(id)));}
   function instUsedExpenseIds(){
     return new Set(installmentRecords.filter(r=>instMeta(r)?.kind==="payment"&&instMeta(r).source_entry_id).map(r=>String(instMeta(r).source_entry_id)));
@@ -1326,7 +1328,7 @@ if (typeof window.supabase === 'undefined') {
         const autoState=auto?"자동 지출 반영 · 지급 미확인":skip?"자동 반영 제외":installmentAutoWarnings.some(x=>String(x.row.id)===String(r.id))?"기존 지출 연결 필요":m.due_month>ymd(new Date()).slice(0,7)?"예정월 자동 반영":"미지급";
         return `<tr><td>${m.sequence}/${meta.months}회${r._linked?'<br><span class="tag">기존 지출</span>':""}</td><td>${escapeInst(m.due_month)}</td><td class="num">${won(done?m.scheduled_amount:instExpectedAmount(r))}원</td><td>${done?escapeInst(r.entry_date):r._linkError?"연결 확인 필요":autoState}</td><td class="num">${done?won(Number(r.amount))+"원":"—"}</td><td><div class="action-btns">${actions}</div>${r._linkError?'<small style="color:var(--danger)">'+escapeInst(r._linkError)+'</small>':""}</td></tr>`;
       }).join("");
-      return `<article class="card inst-item" id="inst-plan-${Number(p.row.id)}"><div class="inst-head"><div><h2 style="margin:0">${escapeInst(meta.name)} <span class="tag">${meta.archived?"보관":remaining===0?"지급 완료":`${paidCount}/${meta.months}회 지급`}</span></h2><p class="inst-muted">구매일 ${escapeInst(meta.purchase_date)} · ${escapeInst(meta.category)}${meta.remark?" · "+escapeInst(meta.remark):""}</p></div><button class="btn-ghost" type="button" style="font-size:12px;padding:6px 10px" onclick="archiveInstallment(${Number(p.row.id)})">${meta.archived?"보관 해제":"보관"}</button></div><div class="inst-amounts"><span>드린 금액 <b>${won(paid)}원</b></span><span>남은 금액 <b style="color:var(--money)">${won(remaining)}원</b></span></div><progress class="inst-progress" value="${Math.min(paid,meta.total)}" max="${meta.total}" aria-label="${escapeInst(meta.name)} 지급률"></progress>${p.inconsistent?'<p style="font-size:13px;color:var(--danger)">회차 금액이나 기존 지출 연결을 확인하세요. 확인할 때까지 새 지급을 기록할 수 없습니다.</p>':""}${p.adjusted?'<p class="inst-muted">기존 지출의 실제 지급액에 맞춰 마지막 미지급 회차의 금액을 조정했습니다.</p>':""}<div style="margin-top:10px">${!meta.archived?`<button class="edit" type="button" onclick="openInstallmentImport(${Number(p.row.id)})">기존 지출 편입</button>`:""}</div><details class="inst-schedule"><summary>회차별 지급 내역 보기</summary><div class="inst-table"><table><thead><tr><th>회차</th><th>예정월</th><th class="num">회차 금액</th><th>드린 날짜</th><th class="num">드린 금액</th><th>관리</th></tr></thead><tbody>${schedule}</tbody></table></div></details></article>`;
+      return `<article class="card inst-item" id="inst-plan-${Number(p.row.id)}"><div class="inst-head"><div><h2 style="margin:0">${escapeInst(meta.name)} <span class="tag">${meta.archived?"보관":remaining===0?"지급 완료":`${paidCount}/${meta.months}회 지급`}</span></h2><p class="inst-muted">구매일 ${escapeInst(meta.purchase_date)} · ${escapeInst(meta.category)}${meta.remark?" · "+escapeInst(meta.remark):""}</p></div><button class="btn-ghost" type="button" style="font-size:12px;padding:6px 10px" onclick="archiveInstallment(${Number(p.row.id)})">${meta.archived?"보관 해제":"보관"}</button></div><div class="inst-amounts"><span>드린 금액 <b>${won(paid)}원</b></span><span>남은 금액 <b style="color:var(--money)">${won(remaining)}원</b></span></div><progress class="inst-progress" value="${Math.min(paid,meta.total)}" max="${meta.total}" aria-label="${escapeInst(meta.name)} 지급률"></progress>${p.inconsistent?'<p style="font-size:13px;color:var(--danger)">회차 금액이나 기존 지출 연결을 확인하세요. 확인할 때까지 새 지급을 기록할 수 없습니다.</p>':""}${p.adjusted?'<p class="inst-muted">기존 지출의 실제 지급액에 맞춰 마지막 미지급 회차의 금액을 조정했습니다.</p>':""}<div style="margin-top:10px">${!meta.archived?`<button class="edit" type="button" onclick="openInstallmentImport(${Number(p.row.id)})">기존 지출 편입</button>`:""}</div><details class="inst-schedule"><summary>회차별 지급 내역 보기</summary><div class="inst-table"><table><thead><tr><th>회차</th><th>예정월</th><th class="num">회차 금액</th><th>실제로 드린 날짜</th><th class="num">드린 금액</th><th>관리</th></tr></thead><tbody>${schedule}</tbody></table></div></details></article>`;
     }).join("");
     if(!document.getElementById("instImportCard").hidden) renderInstallmentImport();
   };
@@ -1518,6 +1520,7 @@ if (typeof window.supabase === 'undefined') {
     installmentPaymentSnapshot={...row._storedRow,_plannedAmount:Number(row.amount)>0?Number(row.amount):instExpectedAmount(row)};
     showInstallmentManagement();
     document.getElementById("instPaymentId").value=String(id);
+    document.getElementById("instPaymentMonthNotice").textContent=`지출 반영월: ${meta.due_month} (고정). 아래 날짜는 엄마에게 실제로 드린 날짜이며, 변경해도 지출월은 이동하지 않습니다.`;
     document.getElementById("instPaymentTitle").textContent=`${plan.meta.name} · ${meta.sequence}/${plan.meta.months}회차`;
     document.getElementById("instPaymentAmount").value=installmentPaymentSnapshot._plannedAmount;
     document.getElementById("instPaymentDate").value=Number(row.amount)>0 ? row.entry_date : ymd(new Date());
@@ -1553,10 +1556,12 @@ if (typeof window.supabase === 'undefined') {
       if(!currentRow||current.inconsistent||currentRow._sourceId||current.meta.archived) throw Error("할부 금액이나 연결 내역이 변경되었습니다. 다시 확인하세요.");
       const expected=Number(currentRow.amount)>0?Number(currentRow.amount):instExpectedAmount(currentRow);
       if(expected!==payAmount) throw Error("남은 지급액이 변경되었습니다. 지급 창을 다시 열어 확인하세요.");
-      await instConditionalUpdate(before,{entry_date:date,amount:payAmount});
+      // 지출은 예정월에 고정하고 실제 지급일은 별도 정보로 저장한다.
+      const paymentMeta={...meta,paid_date:date};
+      await instConditionalUpdate(before,{entry_date:meta.due_month+"-01",amount:payAmount,note:instNote(ledgerDisplayNote(before),paymentMeta)});
       closeInstallmentPayment();
       const refreshed=await loadAll();
-      setStatus("installmentStatus",refreshed ? `${won(payAmount)}원 지급을 확인했습니다. 기존 자동 반영분을 실제 지급일의 지출로 대체했습니다.` : "지급은 저장했으나 최신 화면을 불러오지 못했습니다. 새로고침해서 확인하세요.",!refreshed);
+      setStatus("installmentStatus",refreshed ? `${won(payAmount)}원 지급을 확인했습니다. 지출은 원래 예정월에 유지하고 실제 드린 날짜만 따로 저장했습니다.` : "지급은 저장했으나 최신 화면을 불러오지 못했습니다. 새로고침해서 확인하세요.",!refreshed);
     }catch(err){
       await loadAll();closeInstallmentPayment();
       setStatus("installmentStatus","지급 확인 실패: "+(err.message||err)+" 최신 회차 내역을 확인하세요.",true);
@@ -1569,14 +1574,16 @@ if (typeof window.supabase === 'undefined') {
     if(row?._sourceId){await unlinkInstallmentExpense(id);return;}
     if(!row || Number(row.amount)<=0 || plan.meta.archived) return;
     if(!confirm("이 회차의 지급 확인을 취소할까요? 예정월의 자동 지출은 유지됩니다. 지출에서 빼려면 회차의 ‘자동 반영 제외’를 눌러주세요.")) return;
-    const before={...row},meta=instMeta(row);
+    const before={...row._storedRow},meta={...instMeta(row)};
+    delete meta.paid_date;
+    const unpaidNote=instNote(ledgerDisplayNote(before),meta);
     installmentPaying=true;
     try{
-      await instConditionalUpdate(before,{amount:0,entry_date:meta.due_month+"-01"});
+      await instConditionalUpdate(before,{amount:0,entry_date:meta.due_month+"-01",note:unpaidNote});
       closeInstallmentPayment();await loadAll();
       setStatus("installmentStatus","지급 확인을 취소했습니다. 예정월의 자동 지출 반영은 유지됩니다.");
       showUndoToast("할부 지급 취소를 되돌릴 수 있습니다.",async()=>{
-        await instConditionalUpdate({...before,amount:0,entry_date:meta.due_month+"-01"},{amount:before.amount,entry_date:before.entry_date});
+        await instConditionalUpdate({...before,amount:0,entry_date:meta.due_month+"-01",note:unpaidNote},{amount:before.amount,entry_date:before.entry_date,note:before.note});
         await loadAll();
       });
     }catch(err){await loadAll();setStatus("installmentStatus","취소 실패: "+(err.message||err),true);}
@@ -1628,9 +1635,24 @@ if (typeof window.supabase === 'undefined') {
     }
     return {rows,warnings};
   }
+  // 원래 지출의 ID와 실제 날짜를 보존하고 표시·집계만 할부 예정월로 고정한다.
+  function installmentScheduledLedger(records,base){
+    const assigned=new Map();
+    for(const p of buildInstPlans(records,base)){
+      for(const row of p.payments){
+        if(Number(row.amount)<=0 || row._linkError) continue;
+        const id=String(row._sourceId||row.id);
+        assigned.set(id,{date:instMeta(row).due_month+'-01',paid:row.entry_date});
+      }
+    }
+    return base.map(row=>{
+      const target=assigned.get(String(row.id));
+      return target?{...row,entry_date:target.date,_installmentPaidDate:target.paid}:row;
+    });
+  }
   function refreshAutomaticInstallmentExpenses(){
     const projection=instAutomaticProjection(installmentRecords,installmentBaseLedger,ymd(new Date()).slice(0,7));
-    ledgerEntries=[...installmentBaseLedger,...projection.rows];
+    ledgerEntries=[...installmentScheduledLedger(installmentRecords,installmentBaseLedger),...projection.rows];
     installmentAutoWarnings=projection.warnings;
   }
   function instAutomaticRow(id){return ledgerEntries.find(r=>String(r.id)===String(id)&&r._autoInstallment);}
@@ -1662,7 +1684,7 @@ if (typeof window.supabase === 'undefined') {
     const monthAmount=automatic.filter(r=>ym(r.entry_date)===month).reduce((s,r)=>s+Number(r.amount),0);
     const yearAmount=automatic.filter(r=>r.entry_date.startsWith(year)).reduce((s,r)=>s+Number(r.amount),0);
     const hint=document.getElementById('instAutomaticHint');
-    hint.textContent=`할부는 예정월 1일 기준으로 자동 반영됩니다. 이번 달 ${won(monthAmount)}원 · 선택한 해 ${won(yearAmount)}원이 지급 확인 전 자동 지출입니다. 지급 기록이나 기존 지출 연결 시 같은 회차를 대체하며, 실제 지급액은 ‘엄마 카드 할부’에서 따로 확인할 수 있습니다.`;
+    hint.textContent=`할부는 예정월 1일 기준으로 자동 반영됩니다. 이번 달 ${won(monthAmount)}원 · 선택한 해 ${won(yearAmount)}원이 지급 확인 전 자동 지출입니다. 지급 확인이나 기존 지출 연결 후에도 지출은 원래 예정월에 유지됩니다. 실제 지급일·지급액은 ‘엄마 카드 할부’에서 따로 확인할 수 있습니다.`;
     const warning=document.getElementById('instAutomaticWarning');
     warning.hidden=!installmentAutoWarnings.length;
     warning.textContent=installmentAutoWarnings.length?'중복 확인 필요: '+installmentAutoWarnings.map(x=>`${x.plan.meta.name} ${instMeta(x.row).due_month}`).join(', ')+'. 같은 이름·월의 기존 지출이 있어 해당 회차의 자동 반영을 보류했습니다. ‘기존 지출 편입’으로 연결하세요.':'';
@@ -1903,10 +1925,10 @@ if (typeof window.supabase === 'undefined') {
         (e.actual_pay!==null&&e.actual_pay!==undefined)?e.actual_pay:"", csvEscape(e.note)].join(",") + "\n";
     });
 
-    let ledgerCsv = "구분,날짜,수입지출,항목,금액,메모,카드값나가는달\n";
+    let ledgerCsv = "구분,지출반영일,수입지출,항목,금액,메모,카드값나가는달,할부실제지급일\n";
     [...ledgerEntries].sort((a,b)=> a.entry_date<b.entry_date?-1:1).forEach(e=>{
       ledgerCsv += ["가계부", e.entry_date, (e.type||"expense")==="income"?"수입":"지출",
-        csvEscape(e.category), e.amount, csvEscape(ledgerDisplayNote(e)+(e._autoInstallment?" · 자동 반영 (지급 미확인)":"")), e.card_due_month||""].join(",") + "\n";
+        csvEscape(e.category), e.amount, csvEscape(ledgerDisplayNote(e)+(e._autoInstallment?" · 자동 반영 (지급 미확인)":"")), e.card_due_month||"",e._installmentPaidDate||""].join(",") + "\n";
     });
 
     let cardCsv = "구분,월,카드값총액,대납분,순수실사용액\n";
@@ -2022,7 +2044,7 @@ if (typeof window.supabase === 'undefined') {
     try{
       setStatus("ledgerStatus", "일괄 변경 중...");
       // 실행 취소를 위해 변경 전 항목들을 기억해둠
-      const backups = ledgerEntries.filter(e => ids.includes(String(e.id)))
+      const backups = installmentBaseLedger.filter(e => ids.includes(String(e.id)))
         .map(e => ({id:e.id, category:e.category}));
 
       const {error} = await sb.from("ledger_entries")
@@ -2053,7 +2075,7 @@ if (typeof window.supabase === 'undefined') {
     try{
       setStatus("ledgerStatus", "삭제 중...");
       // 실행 취소를 위해 삭제 전 데이터를 통째로 기억해둠
-      const backups = ledgerEntries.filter(e => ids.includes(String(e.id))).map(e => ({...e}));
+      const backups = installmentBaseLedger.filter(e => ids.includes(String(e.id))).map(e => ({...e}));
 
       const {error} = await sb.from("ledger_entries")
         .delete()
@@ -2080,7 +2102,7 @@ if (typeof window.supabase === 'undefined') {
     const dueMonth = document.getElementById("passGenDueMonth").value;
     if(!dueMonth){ alert("카드값 나가는 달을 선택하세요."); return; }
 
-    const picked = ledgerEntries.filter(e => ids.includes(String(e.id)));
+    const picked = installmentBaseLedger.filter(e => ids.includes(String(e.id)));
     const isAllPass = picked.length > 0 && picked.every(e => e.type === "income" && e.category === "대납정산");
     if(!isAllPass){ alert("대납정산 건만 선택했을 때 사용할 수 있습니다."); return; }
 
@@ -2325,7 +2347,7 @@ if (typeof window.supabase === 'undefined') {
       type: e.type || "expense", // 예전 데이터는 expense
       category: e.category,
       amount: Number(e.amount),
-      note: ledgerDisplayNote(e)+(e._autoInstallment?" · 자동 반영 (지급 미확인)":""),
+      note: ledgerDisplayNote(e)+(e._installmentPaidDate?" · 실제 지급 "+e._installmentPaidDate:"")+(e._autoInstallment?" · 자동 반영 (지급 미확인)":""),
       installment: instMeta(e)?.kind === "payment",
       automatic: !!e._autoInstallment,
       linkedSlot: linkedSourceSlots.get(String(e.id)),
@@ -2584,7 +2606,7 @@ if (typeof window.supabase === 'undefined') {
   };
 
   window.startEditLedger = function(id) {
-    const entry = ledgerEntries.find(e => e.id === id);
+    const entry = installmentBaseLedger.find(e => e.id === id);
     if(!entry) return;
     if(instMeta(entry)){openInstallmentPayment(id);return;}
 
@@ -2751,7 +2773,7 @@ if (typeof window.supabase === 'undefined') {
     if(!confirm("이 내역을 정말 삭제할까요?")) return;
     try{
       // 실행 취소를 위해 삭제 전 데이터를 기억해둠
-      const backup = ledgerEntries.find(e => e.id === id);
+      const backup = installmentBaseLedger.find(e => e.id === id);
       const {error}=await sb.from("ledger_entries").delete().eq("id",id);
       if(error) throw error;
       if(editingLedgerId === id) cancelLedgerEdit();
