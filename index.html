@@ -348,7 +348,14 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
       </div>
       <div class="field">
         <label id="actualPayLabel" for="actualPay">실제 받은 금액 (선택)</label>
-        <input type="number" id="actualPay" min="0" placeholder="예: 5.6 -> 56000원 변환">
+        <input type="number" id="actualPay" min="0" step="any" placeholder="예: 5.6 → 56,000원">
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;">
+          <input type="checkbox" id="deductTax" checked onchange="updateWorkPayPreview()" style="width:16px;height:16px;">
+          3.3% 공제 후 저장
+        </label>
+        <label for="netPayPreview" style="margin-top:8px;">저장할 금액 (원)</label>
+        <input type="text" id="netPayPreview" readonly placeholder="금액이나 근무 시간을 입력하세요" style="background:var(--accent-soft);font-weight:700;color:var(--accent);">
+        <small id="taxPreviewText" aria-live="polite" style="display:block;font-size:12px;color:var(--ink-soft);margin-top:4px;"></small>
         
         <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-weight:600; font-size:12px; cursor:pointer; color:var(--ink-soft);">
           <input type="checkbox" id="isZeroPay" onchange="toggleZeroPay()" style="width:16px; height:16px; margin:0; padding:0;">
@@ -797,7 +804,59 @@ if (typeof window.supabase === 'undefined') {
       e.target.value = val * 10000;
     }
   }
-  document.getElementById("actualPay").addEventListener("blur", handleMoneyInput);
+  // 기존 저장 금액은 다시 환산하지 않고, 사용자가 새로 타이핑한 금액만 만원 단위로 해석한다.
+  let workPayTyped = false;
+  function readWorkPayInput() {
+    const raw = document.getElementById("actualPay").value;
+    if(raw === "") return null;
+    const amount = Number(raw);
+    return workPayTyped && amount > 0 && amount < 1000
+      ? Math.round(amount * 10000) : amount;
+  }
+  function workPayAmounts() {
+    if(document.getElementById("isZeroPay").checked) return {gross:0, net:0, deduction:0};
+    let gross = readWorkPayInput();
+    if(gross === null && document.getElementById("workType").value === "hourly") {
+      const hours = document.getElementById("hours").value;
+      if(hours !== "") gross = Number(hours) * (Number(settings.wage) || 0);
+    }
+    if(gross === null || !Number.isFinite(gross) || gross < 0) return null;
+    // 앱의 표시/저장 기준: 96.7%를 계산한 뒤 원 단위 반올림.
+    const net = document.getElementById("deductTax").checked
+      ? Math.round(gross * 967 / 1000) : gross;
+    return {gross, net, deduction:gross-net};
+  }
+  window.updateWorkPayPreview = function() {
+    const deduct = document.getElementById("deductTax").checked;
+    const freelance = document.getElementById("workType").value === "freelance";
+    const zero = document.getElementById("isZeroPay").checked;
+    document.getElementById("actualPayLabel").textContent =
+      (deduct ? "공제 전 금액" : "실제 받은 금액") + (freelance ? " (필수)" : " (선택)");
+    document.getElementById("deductTax").disabled = zero;
+    const pay = workPayAmounts();
+    document.getElementById("netPayPreview").value = pay ? won(pay.net) : "";
+    document.getElementById("taxPreviewText").textContent = zero
+      ? "다른 날 합산: 이 기록은 0원으로 저장합니다."
+      : pay ? (deduct ? "3.3% 공제액: " + won(pay.deduction) + "원 · 저장 금액은 원 단위 반올림"
+                       : "추가 공제 없이 입력한 금액을 반영합니다.") : "";
+    document.getElementById("payHintText").textContent =
+      (deduct ? "공제 전 금액을 입력하면 3.3%를 뺀 금액이 저장됩니다. 이미 공제된 입금액을 적을 때는 체크를 해제하세요."
+              : editingWorkId !== null ? "기존 기록은 저장된 금액을 유지하며 다시 공제하지 않습니다. 공제 전 금액으로 바꾸려면 체크하세요."
+                                      : "입력한 금액을 그대로 저장합니다.") +
+      (freelance ? "" : " 금액을 비우면 근무 시간 × 시급으로 계산합니다.") +
+      " 5.6처럼 새로 입력한 1,000 미만의 양수는 만원 단위로 환산합니다.";
+  };
+  document.getElementById("actualPay").addEventListener("input", () => {
+    workPayTyped = true;
+    updateWorkPayPreview();
+  });
+  document.getElementById("actualPay").addEventListener("blur", e => {
+    const amount = readWorkPayInput();
+    if(amount !== null && Number.isFinite(amount)) e.target.value = amount;
+    workPayTyped = false;
+    updateWorkPayPreview();
+  });
+  document.getElementById("hours").addEventListener("input", updateWorkPayPreview);
   document.getElementById("ledgerAmt").addEventListener("blur", handleMoneyInput);
 
   window.toggleZeroPay = function() {
@@ -810,6 +869,8 @@ if (typeof window.supabase === 'undefined') {
       payInput.value = "";
       payInput.disabled = false;
     }
+    workPayTyped = false;
+    updateWorkPayPreview();
   };
 
   window.toggleWorkType = function() {
@@ -830,6 +891,7 @@ if (typeof window.supabase === 'undefined') {
       payHintText.innerHTML = "* 비워두면 시급으로 계산됩니다. 시급과 다르게 받았다면 금액을 적어주세요.";
       hoursLabel.innerText = "근무 시간 (자동계산)";
     }
+    updateWorkPayPreview();
   }
 
   window.calcHours = function() {
@@ -843,6 +905,7 @@ if (typeof window.supabase === 'undefined') {
       if (diff < 0) diff += 24; 
       document.getElementById("hours").value = diff.toFixed(1);
     }
+    updateWorkPayPreview();
   }
 
   function setStatus(id, msg, isErr, isEdit){
@@ -928,6 +991,7 @@ if (typeof window.supabase === 'undefined') {
   function renderWork(){
     document.getElementById("wage").value = settings.wage||"";
     document.getElementById("weekStart").value = settings.week_start;
+    updateWorkPayPreview();
 
     // 시급 0원 안내
     const wageWarnEl = document.getElementById("wageWarn");
@@ -2526,6 +2590,9 @@ if (typeof window.supabase === 'undefined') {
     
     document.getElementById("isZeroPay").checked = false;
     document.getElementById("actualPay").disabled = false;
+    document.getElementById("deductTax").checked = true;
+    workPayTyped = false;
+    toggleWorkType();
     
     document.getElementById("addWorkBtn").textContent = "기록 추가";
     document.getElementById("cancelWorkBtn").style.display = "none";
@@ -2554,6 +2621,9 @@ if (typeof window.supabase === 'undefined') {
     if(!entry) return;
 
     editingWorkId = id;
+    // 과거 기록과 공제 후 저장한 기록 모두, 수정 시에는 다시 공제하지 않는다.
+    document.getElementById("deductTax").checked = false;
+    workPayTyped = false;
     
     document.getElementById("workType").value = entry.work_type || 'hourly';
     toggleWorkType();
@@ -2593,6 +2663,7 @@ if (typeof window.supabase === 'undefined') {
       document.getElementById("endMin").value = "00";
     }
 
+    updateWorkPayPreview();
     document.getElementById("workFormTitle").textContent = "근무 기록 수정 모드";
     document.getElementById("addWorkBtn").textContent = "수정 완료";
     document.getElementById("cancelWorkBtn").style.display = "block";
@@ -2643,10 +2714,19 @@ if (typeof window.supabase === 'undefined') {
     const paymentDate = document.getElementById("paymentDate").value;
     const note = document.getElementById("workNote").value.trim();
     const actualPayInput = document.getElementById("actualPay").value;
+    const inputAmount = readWorkPayInput();
+    const payAmounts = workPayAmounts();
+    const deductTax = document.getElementById("deductTax").checked;
     const hoursInput = document.getElementById("hours").value;
     const isZeroPay = document.getElementById("isZeroPay").checked; 
     
     if(!date){alert("날짜를 선택하세요.");return;}
+    if(!isZeroPay && inputAmount !== null && (!Number.isFinite(inputAmount) || inputAmount < 0)){
+      alert("금액은 0 이상의 숫자로 입력하세요.");return;
+    }
+    if(!Number.isFinite(Number(hoursInput)) || Number(hoursInput) < 0){
+      alert("근무 시간을 올바르게 입력하세요.");return;
+    }
     
     const btn = document.getElementById("addWorkBtn"); 
     btn.disabled = true;
@@ -2682,8 +2762,12 @@ if (typeof window.supabase === 'undefined') {
 
       if (isZeroPay) {
         submitData.actual_pay = 0;
+      } else if (deductTax) {
+        if(!payAmounts) throw Error("공제 전 금액이나 근무 시간을 확인해주세요.");
+        // 기존 컬럼에 세후 금액을 확정 저장하므로 목록/가계부/CSV에서도 재공제하지 않는다.
+        submitData.actual_pay = payAmounts.net;
       } else if (actualPayInput !== "") {
-        submitData.actual_pay = parseFloat(actualPayInput);
+        submitData.actual_pay = inputAmount;
       } else {
         submitData.actual_pay = null;
       }
@@ -2817,11 +2901,13 @@ if (typeof window.supabase === 'undefined') {
   document.getElementById("instFirstMonth").value=today.slice(0,7);
   updateInstallmentPreview();
 
+  updateWorkPayPreview();
   // 최종 데이터 로드
   loadAll();
 }
 </script>
 </body>
 </html>
+
 
 
