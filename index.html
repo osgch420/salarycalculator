@@ -463,12 +463,14 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
     </div>
     <div style="margin-top:16px"><label id="instSelectedMonthLabel">선택한 달에 아직 드릴 금액</label><div class="money" id="instMonthDue" style="font-size:20px">0원</div></div>
     <p id="instOverdue" style="font-size:13px;color:var(--danger)"></p>
-    <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">등록한 할부는 예정월 1일부터 가계부 지출과 잔액에 자동 반영됩니다. 미래 회차는 그 달이 되면 반영됩니다. 지급 확인은 실제 드린 날짜와 금액만 기록합니다. 늦게 확인해도 지출은 원래 할부 예정월에 그대로 남습니다. 일반 지출에 따로 입력하지 마세요.</p>
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:12px">등록한 할부는 지급 예정월의 지출과 잔액에 자동 반영됩니다. 첫 회차가 구매월과 같으면 구매일로 표시하고, 이후 회차는 매월 1일로 표시합니다. 미래 회차는 그 달이 되면 반영됩니다. 지급 확인은 실제 드린 날짜와 금액만 기록합니다. 늦게 확인해도 지출은 원래 할부 예정월에 그대로 남습니다. 일반 지출에 따로 입력하지 마세요.</p>
   </div>
 
   <details class="card" id="instNewDetails">
-    <summary style="cursor:pointer;font-weight:700">＋ 새 할부 등록</summary>
+    <summary id="instFormTitle" style="cursor:pointer;font-weight:700">＋ 새 할부 등록</summary>
     <form id="installmentForm" onsubmit="saveInstallmentPlan(event)" style="margin-top:16px">
+      <p id="instEditNotice" class="sub" hidden></p>
+      <fieldset id="instFormFields" style="border:0;padding:0;min-width:0;">
       <div class="row">
         <div class="field"><label for="instName">구매한 물건 / 내역</label><input type="text" id="instName" maxlength="100" required placeholder="예: 노트북"></div>
         <div class="field"><label for="instPurchaseDate">구매일</label><input type="date" id="instPurchaseDate" required></div>
@@ -487,7 +489,8 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
       </div>
       <p style="font-size:12px;color:var(--ink-soft)">금액은 원 단위로 입력하세요. 총액이 나누어떨어지지 않거나 월 금액을 지정하면 마지막 회차에 차액을 맞춥니다.</p>
       <p id="instPlanPreview" style="font-size:13px;color:var(--accent);margin-top:8px" aria-live="polite"></p>
-      <button class="btn-full" type="submit" id="instCreateBtn">할부 등록</button>
+      <div class="row"><button class="btn-full" type="submit" id="instCreateBtn">할부 등록</button><button type="button" class="btn-ghost" id="instEditCancelBtn" onclick="cancelInstallmentEdit()" hidden>수정 취소</button></div>
+      </fieldset>
     </form>
   </details>
 
@@ -1199,6 +1202,8 @@ if (typeof window.supabase === 'undefined') {
   let installmentCreating = false;
   let installmentPaying = false;
   let installmentDeleting = false;
+  let installmentEditingId = null;
+  let installmentEditSnapshot = null;
   let installmentDraft = readInstallmentDraft();
   let installmentPaymentSnapshot = null;
 
@@ -1269,6 +1274,7 @@ if (typeof window.supabase === 'undefined') {
     if(!Number.isSafeInteger(total) || total <= 0 || total > 1000000000) throw Error("총 갚을 금액을 1원 이상 10억 원 이하의 원 단위로 입력하세요.");
     if(!Number.isInteger(months) || months < 1 || months > 120 || total < months) throw Error("할부 개월 수는 1~120개월이며 각 회차 금액이 1원 이상이어야 합니다.");
     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(first_month) || first_month < "2000-01" || first_month > "2100-12") throw Error("첫 지급 예정월을 2000~2100년 사이로 입력하세요.");
+    if(first_month < purchase_date.slice(0,7)) throw Error("첫 지급 예정월은 구매월 또는 그 이후로 선택하세요.");
     if(!INST_CATEGORIES.includes(category)) throw Error("지급 항목을 선택하세요.");
     if(remark.length>300) throw Error("메모는 300자 이내로 입력하세요.");
     const monthly = monthlyInput === "" ? Math.floor(total/months) : Number(monthlyInput);
@@ -1301,7 +1307,7 @@ if (typeof window.supabase === 'undefined') {
   function buildInstPlans(records, ledger){
     const plans=records.filter(r=>instMeta(r)?.kind==="plan");
     const keys=new Set(plans.map(r=>instMeta(r).key));
-    const slots=records.filter(r=>{const m=instMeta(r);return m?.kind==="payment"&&keys.has(m.key);});
+    const slots=records.filter(r=>{const m=instMeta(r);return m?.kind==="payment"&&!m.inactive&&keys.has(m.key);});
     const owners=new Map();
     for(const slot of slots){
       const source=instMeta(slot).source_entry_id;
@@ -1381,6 +1387,7 @@ if (typeof window.supabase === 'undefined') {
     if(!visible.length) area.innerHTML='<p class="empty">'+(plans.length?"선택한 조건에 해당하는 할부가 없습니다.":"‘새 할부 등록’으로 구매 내역을 추가하세요. 이미 기록한 지출은 아래 전체 내역에서 ‘할부로 연결’을 누르면 됩니다.")+'</p>';
     else area.innerHTML=visible.map(p=>{
       const {meta,remaining,paid,paidCount}=p;
+      const reflected=p.payments.filter(r=>instMeta(r).due_month===month).reduce((s,r)=>s+(Number(r.amount)>0?Number(r.amount):Number(instAutomaticRow(r.id)?.amount||0)),0);
       const schedule=p.payments.map(r=>{
         const m=instMeta(r),done=Number(r.amount)>0;
         let actions="";
@@ -1393,7 +1400,7 @@ if (typeof window.supabase === 'undefined') {
         const autoState=auto?"자동 지출 반영 · 지급 미확인":skip?"자동 반영 제외":installmentAutoWarnings.some(x=>String(x.row.id)===String(r.id))?"기존 지출 연결 필요":m.due_month>ymd(new Date()).slice(0,7)?"예정월 자동 반영":"미지급";
         return `<tr><td>${m.sequence}/${meta.months}회${r._linked?'<br><span class="tag">기존 지출</span>':""}</td><td>${escapeInst(m.due_month)}</td><td class="num">${won(done?m.scheduled_amount:instExpectedAmount(r))}원</td><td>${done?escapeInst(r.entry_date):r._linkError?"연결 확인 필요":autoState}</td><td class="num">${done?won(Number(r.amount))+"원":"—"}</td><td><div class="action-btns">${actions}</div>${r._linkError?'<small style="color:var(--danger)">'+escapeInst(r._linkError)+'</small>':""}</td></tr>`;
       }).join("");
-      return `<article class="card inst-item" id="inst-plan-${Number(p.row.id)}"><div class="inst-head"><div><h2 style="margin:0">${escapeInst(meta.name)} <span class="tag">${meta.archived?"보관":remaining===0?"지급 완료":`${paidCount}/${meta.months}회 지급`}</span></h2><p class="inst-muted">구매일 ${escapeInst(meta.purchase_date)} · ${escapeInst(meta.category)}${meta.remark?" · "+escapeInst(meta.remark):""}</p></div><div class="action-btns"><button class="btn-ghost" type="button" style="font-size:12px;padding:6px 10px" onclick="archiveInstallment(${Number(p.row.id)})">${meta.archived?"보관 해제":"보관"}</button><button class="del" type="button" onclick="deleteInstallment(${Number(p.row.id)})" ${installmentDeleting?"disabled":""}>삭제</button></div></div><div class="inst-amounts"><span>드린 금액 <b>${won(paid)}원</b></span><span>남은 금액 <b style="color:var(--money)">${won(remaining)}원</b></span></div><progress class="inst-progress" value="${Math.min(paid,meta.total)}" max="${meta.total}" aria-label="${escapeInst(meta.name)} 지급률"></progress>${p.inconsistent?'<p style="font-size:13px;color:var(--danger)">회차 금액이나 기존 지출 연결을 확인하세요. 확인할 때까지 새 지급을 기록할 수 없습니다.</p>':""}${p.adjusted?'<p class="inst-muted">기존 지출의 실제 지급액에 맞춰 마지막 미지급 회차의 금액을 조정했습니다.</p>':""}<div style="margin-top:10px">${!meta.archived?`<button class="edit" type="button" onclick="openInstallmentImport(${Number(p.row.id)})">기존 지출 편입</button>`:""}</div><details class="inst-schedule"><summary>회차별 지급 내역 보기</summary><div class="inst-table"><table><thead><tr><th>회차</th><th>예정월</th><th class="num">회차 금액</th><th>실제로 드린 날짜</th><th class="num">드린 금액</th><th>관리</th></tr></thead><tbody>${schedule}</tbody></table></div></details></article>`;
+      return `<article class="card inst-item" id="inst-plan-${Number(p.row.id)}"><div class="inst-head"><div><h2 style="margin:0">${escapeInst(meta.name)} <span class="tag">${meta.archived?"보관":remaining===0?"지급 완료":`${paidCount}/${meta.months}회 지급`}</span></h2><p class="inst-muted">구매일 ${escapeInst(meta.purchase_date)} · 첫 지급 ${escapeInst(meta.first_month)} · ${escapeInst(meta.category)}${meta.remark?" · "+escapeInst(meta.remark):""}</p></div><div class="action-btns"><button class="edit" type="button" onclick="startEditInstallment(${Number(p.row.id)})">수정</button><button class="btn-ghost" type="button" style="font-size:12px;padding:6px 10px" onclick="archiveInstallment(${Number(p.row.id)})">${meta.archived?"보관 해제":"보관"}</button><button class="del" type="button" onclick="deleteInstallment(${Number(p.row.id)})" ${installmentDeleting?"disabled":""}>삭제</button></div></div><div class="inst-amounts"><span>드린 금액 <b>${won(paid)}원</b></span><span>남은 금액 <b style="color:var(--money)">${won(remaining)}원</b></span></div><p class="inst-muted">${monthLabel(month)} 지출에 반영된 금액: <b>${won(reflected)}원</b></p><progress class="inst-progress" value="${Math.min(paid,meta.total)}" max="${meta.total}" aria-label="${escapeInst(meta.name)} 지급률"></progress>${p.inconsistent?'<p style="font-size:13px;color:var(--danger)">회차 금액이나 기존 지출 연결을 확인하세요. 확인할 때까지 새 지급을 기록할 수 없습니다.</p>':""}${p.adjusted?'<p class="inst-muted">기존 지출의 실제 지급액에 맞춰 마지막 미지급 회차의 금액을 조정했습니다.</p>':""}<div style="margin-top:10px">${!meta.archived?`<button class="edit" type="button" onclick="openInstallmentImport(${Number(p.row.id)})">기존 지출 편입</button>`:""}</div><details class="inst-schedule"><summary>회차별 지급 내역 보기</summary><div class="inst-table"><table><thead><tr><th>회차</th><th>예정월</th><th class="num">회차 금액</th><th>실제로 드린 날짜</th><th class="num">드린 금액</th><th>관리</th></tr></thead><tbody>${schedule}</tbody></table></div></details></article>`;
     }).join("");
     if(!document.getElementById("instImportCard").hidden) renderInstallmentImport();
   };
@@ -1535,9 +1542,147 @@ if (typeof window.supabase === 'undefined') {
   };
 
 
+  const INST_SCHEDULE_FIELDS = ["instAmount","instMonths","instFirstMonth","instMonthlyAmount"];
+  function instScheduleLocked(plan){
+    return plan.payments.some(r=>Number(r.amount)>0 || r._sourceId);
+  }
+  function instRawRow(row){
+    const result={entry_date:row.entry_date,type:row.type||"expense",category:row.category,amount:row.amount,note:row.note,card_due_month:row.card_due_month??null};
+    if(row.id!==undefined) result.id=row.id;
+    return result;
+  }
+  function instEditFingerprint(records,key){
+    return JSON.stringify(records.filter(r=>instMeta(r)?.key===key)
+      .sort((a,b)=>Number(a.id)-Number(b.id)).map(instRawRow));
+  }
+  function resetInstallmentForm(){
+    installmentEditingId=null;
+    installmentEditSnapshot=null;
+    document.getElementById("installmentForm").reset();
+    document.getElementById("instFormFields").disabled=false;
+    INST_SCHEDULE_FIELDS.forEach(id=>document.getElementById(id).disabled=false);
+    document.getElementById("instPurchaseDate").value=ymd(new Date());
+    document.getElementById("instFirstMonth").value=ymd(new Date()).slice(0,7);
+    lastInstallmentPurchaseMonth=ymd(new Date()).slice(0,7);
+    document.getElementById("instFormTitle").textContent="＋ 새 할부 등록";
+    document.getElementById("instCreateBtn").textContent="할부 등록";
+    document.getElementById("instCreateBtn").disabled=false;
+    document.getElementById("instEditCancelBtn").hidden=true;
+    document.getElementById("instEditNotice").hidden=true;
+    updateInstallmentPreview();
+  }
+  window.cancelInstallmentEdit=function(){
+    if(installmentCreating||installmentPaying||installmentDeleting) return;
+    resetInstallmentForm();
+    document.getElementById("instNewDetails").open=false;
+    setStatus("installmentStatus","수정을 취소했습니다. 기존 기록은 그대로입니다.");
+  };
+  window.startEditInstallment=function(id){
+    if(installmentCreating||installmentPaying||installmentImporting||installmentDeleting) return;
+    const plan=instPlans().find(p=>String(p.row.id)===String(id));
+    if(!plan) return;
+    if(plan.inconsistent){setStatus("installmentStatus","회차 금액이나 연결 내역을 먼저 확인한 뒤 수정하세요.",true);return;}
+    installmentEditingId=plan.row.id;
+    installmentEditSnapshot={key:plan.meta.key,fingerprint:instEditFingerprint(installmentRecords,plan.meta.key)};
+    const fields={instName:plan.meta.name,instPurchaseDate:plan.meta.purchase_date,instAmount:plan.meta.total,instMonths:plan.meta.months,instFirstMonth:plan.meta.first_month,instMonthlyAmount:plan.meta.monthly,instCategory:plan.meta.category,instRemark:plan.meta.remark||""};
+    Object.entries(fields).forEach(([id,value])=>document.getElementById(id).value=value);
+    const locked=instScheduleLocked(plan);
+    INST_SCHEDULE_FIELDS.forEach(id=>document.getElementById(id).disabled=locked);
+    const notice=document.getElementById("instEditNotice");
+    notice.hidden=false;
+    notice.textContent=locked
+      ? "지급하거나 기존 지출을 연결한 회차가 있어 금액·개월 수·첫 지급월은 유지합니다. 이름·구매일·항목·메모를 수정할 수 있습니다. 연결한 원본 지출의 항목은 그대로 유지됩니다."
+      : "금액·개월 수·첫 지급월을 바꾸면 미지급 회차와 가계부의 자동 반영 금액도 함께 바뀝니다.";
+    document.getElementById("instFormTitle").textContent="✏️ 할부 수정";
+    document.getElementById("instCreateBtn").textContent="수정 저장";
+    document.getElementById("instEditCancelBtn").hidden=false;
+    document.getElementById("instNewDetails").open=true;
+    closeInstallmentPayment();
+    document.getElementById("instImportCard").hidden=true;
+    showInstallmentManagement();
+    updateInstallmentPreview();
+    setStatus("installmentStatus",plan.meta.name+" 할부를 수정 중입니다.");
+    document.getElementById("instNewDetails").scrollIntoView({behavior:"smooth",block:"start"});
+  };
+  function buildInstallmentEditRows(plan,input,records){
+    if(instScheduleLocked(plan) && ["total","months","first_month","monthly"].some(k=>String(input[k])!==String(plan.meta[k]))){
+      throw Error("지급·연결 기록이 있는 할부의 금액·개월 수·첫 지급월은 변경할 수 없습니다.");
+    }
+    const oldSlots=records.filter(r=>{const m=instMeta(r);return m?.kind==="payment"&&m.key===plan.meta.key;});
+    const bySequence=new Map();
+    for(const row of oldSlots){
+      const seq=instMeta(row).sequence;
+      if(bySequence.has(seq)) throw Error("중복 회차가 있습니다. 회차 내역을 먼저 확인하세요.");
+      bySequence.set(seq,row);
+    }
+    const meta={...plan.meta,...input};
+    const rows=[{...instRawRow(plan.row),entry_date:input.purchase_date,note:instNote("엄마 카드 할부 등록 · "+input.name,meta)}];
+    for(const schedule of instSchedule(input)){
+      const old=bySequence.get(schedule.sequence);
+      const paymentMeta={...(old?instMeta(old):{}),version:1,kind:"payment",key:meta.key,...schedule};
+      delete paymentMeta.inactive;
+      const row=old?instRawRow(old):{type:"expense",amount:0,card_due_month:null};
+      // 이미 지급한 날짜·금액과 연결 ID는 그대로 보존한다.
+      if(!old || Number(old.amount)===0) row.entry_date=schedule.due_month+"-01";
+      row.category=input.category;
+      row.note=instNote("엄마 카드 · "+input.name+" · "+schedule.sequence+"/"+input.months+"회차",paymentMeta);
+      rows.push(row);
+    }
+    // 줄어든 미지급 회차는 0원 상태로 비활성화해 별도 DELETE 없이 한 번에 저장한다.
+    // 다시 개월 수를 늘리면 같은 ID를 재사용하므로 중복 회차가 생기지 않는다.
+    for(const old of oldSlots.filter(r=>instMeta(r).sequence>input.months)){
+      const m=instMeta(old);
+      if(Number(old.amount)!==0||m.source_entry_id) throw Error("지급·연결한 회차는 줄일 수 없습니다.");
+      rows.push({...instRawRow(old),note:instNote(ledgerDisplayNote(old),{...m,inactive:true})});
+    }
+    return rows;
+  }
+  async function saveInstallmentEdit(){
+    const snapshot=installmentEditSnapshot;
+    if(!snapshot) return;
+    let input;
+    try{input=instPlanInput();}catch(err){setStatus("installmentStatus",err.message,true);return;}
+    installmentCreating=true;installmentPaying=true;
+    document.getElementById("instFormFields").disabled=true;
+    let writeRequested=false;
+    try{
+      setStatus("installmentStatus","최신 할부 내역을 확인하고 있습니다.");
+      const rows=await readAllLedgerRows();
+      ingestLedgerRows(rows);
+      const plan=instPlans().find(p=>String(p.row.id)===String(installmentEditingId)&&p.meta.key===snapshot.key);
+      if(!plan || plan.inconsistent || instEditFingerprint(rows,snapshot.key)!==snapshot.fingerprint){
+        throw Error("수정 중 다른 화면에서 기록이 바뀌었습니다. 수정을 취소하고 최신 내역에서 다시 열어주세요.");
+      }
+      const changes=buildInstallmentEditRows(plan,input,rows);
+      writeRequested=true;
+      const {data,error}=await sb.from("ledger_entries")
+        .upsert(changes,{onConflict:"id",defaultToNull:false}).select("id");
+      if(error) throw error;
+      const refreshed=await loadAll();
+      if(!refreshed) throw Error("저장 응답을 받았지만 최신 목록을 확인하지 못했습니다. 새로고침해서 확인하세요.");
+      if(data?.length!==changes.length) throw Error("저장 결과가 예상과 다릅니다. 최신 목록을 확인한 뒤 다시 열어주세요.");
+      const saved=instPlans().find(p=>p.meta.key===snapshot.key);
+      if(!saved||saved.inconsistent||Object.keys(input).some(k=>String(saved.meta[k]??"")!==String(input[k]??""))){
+        throw Error("변경된 할부를 확인하지 못했습니다. 최신 목록을 확인하세요.");
+      }
+      resetInstallmentForm();
+      document.getElementById("instNewDetails").open=false;
+      renderLedger();
+      setStatus("installmentStatus",input.name+" 할부를 수정했습니다. 해당 월의 지출도 다시 계산했습니다.");
+    }catch(err){
+      if(writeRequested) await loadAll();
+      setStatus("installmentStatus","수정 확인: "+(err.message||err),true);
+    }finally{
+      installmentCreating=false;installmentPaying=false;
+      document.getElementById("instFormFields").disabled=false;
+      renderInstallments();
+    }
+  }
+
   window.saveInstallmentPlan = async function(event){
     event?.preventDefault();
-    if(installmentCreating || installmentDeleting) return;
+    if(installmentCreating || installmentDeleting || installmentPaying || installmentImporting) return;
+    if(installmentEditingId!==null){await saveInstallmentEdit();return;}
     if(!installmentsReady){setStatus("installmentStatus","기존 기록을 불러온 뒤 등록할 수 있습니다.",true);return;}
     let plan;
     try{ plan=instPlanInput(); }catch(err){setStatus("installmentStatus",err.message,true);return;}
@@ -1563,9 +1708,7 @@ if (typeof window.supabase === 'undefined') {
       if(!instPlans().some(p=>p.meta.key===meta.key)) throw Error("저장 결과를 확인하지 못했습니다. 다시 시도하면 중복 없이 확인합니다.");
       installmentDraft=null;
       rememberInstallmentDraft(null);
-      document.getElementById("installmentForm").reset();
-      document.getElementById("instPurchaseDate").value=ymd(new Date());
-      document.getElementById("instFirstMonth").value=ymd(new Date()).slice(0,7);
+      resetInstallmentForm();
       document.getElementById("instFilter").value="active";
       document.getElementById("instNewDetails").open=false;
       updateInstallmentPreview();renderInstallments();
@@ -1712,6 +1855,7 @@ if (typeof window.supabase === 'undefined') {
       instImportMappings.clear();
       for(const rowId of deleted) selectedIds.delete(rowId);
       if(editingLedgerId!==null && deleted.has(String(editingLedgerId))) resetLedgerForm();
+      if(installmentEditingId!==null && deleted.has(String(installmentEditingId))) resetInstallmentForm();
       if(installmentDraft?.key===key){
         installmentDraft=null;
         rememberInstallmentDraft(null);
@@ -1765,6 +1909,10 @@ if (typeof window.supabase === 'undefined') {
       && ym(e.entry_date)===m.due_month
       && installmentNameMatches(e.note,plan.meta.name));
   }
+  function installmentExpenseDate(meta,month){
+    return month===meta.first_month && String(meta.purchase_date).slice(0,7)===month
+      ? meta.purchase_date : month+"-01";
+  }
   function instAutomaticProjection(records,base,asOfMonth){
     const plans=buildInstPlans(records,base),rows=[],warnings=[];
     const used=new Set(plans.flatMap(p=>p.payments.filter(r=>r._sourceId).map(r=>r._sourceId)));
@@ -1775,7 +1923,7 @@ if (typeof window.supabase === 'undefined') {
         if(Number(r.amount)>0 || r._sourceId || m.auto_expense_skip || m.due_month>asOfMonth) continue;
         const matches=instAutomaticCandidates(p,r,base,used);
         if(matches.length){warnings.push({plan:p,row:r,sources:matches});continue;}
-        rows.push({...r._storedRow,entry_date:m.due_month+'-01',amount:instExpectedAmount(r),_autoInstallment:true});
+        rows.push({...r._storedRow,entry_date:installmentExpenseDate(p.meta,m.due_month),amount:instExpectedAmount(r),_autoInstallment:true});
       }
     }
     return {rows,warnings};
@@ -1787,7 +1935,7 @@ if (typeof window.supabase === 'undefined') {
       for(const row of p.payments){
         if(Number(row.amount)<=0 || row._linkError) continue;
         const id=String(row._sourceId||row.id);
-        assigned.set(id,{date:instMeta(row).due_month+'-01',paid:row.entry_date});
+        assigned.set(id,{date:installmentExpenseDate(p.meta,instMeta(row).due_month),paid:row.entry_date});
       }
     }
     return base.map(row=>{
@@ -1829,7 +1977,7 @@ if (typeof window.supabase === 'undefined') {
     const monthAmount=automatic.filter(r=>ym(r.entry_date)===month).reduce((s,r)=>s+Number(r.amount),0);
     const yearAmount=automatic.filter(r=>r.entry_date.startsWith(year)).reduce((s,r)=>s+Number(r.amount),0);
     const hint=document.getElementById('instAutomaticHint');
-    hint.textContent=`할부는 예정월 1일 기준으로 자동 반영됩니다. 이번 달 ${won(monthAmount)}원 · 선택한 해 ${won(yearAmount)}원이 지급 확인 전 자동 지출입니다. 지급 확인이나 기존 지출 연결 후에도 지출은 원래 예정월에 유지됩니다. 실제 지급일·지급액은 ‘엄마 카드 할부’에서 따로 확인할 수 있습니다.`;
+    hint.textContent=`할부는 지급 예정월 기준으로 자동 반영됩니다. 구매월의 첫 회차는 구매일로 표시합니다. 이번 달 ${won(monthAmount)}원 · 선택한 해 ${won(yearAmount)}원이 지급 확인 전 자동 지출입니다. 지급 확인이나 기존 지출 연결 후에도 지출은 원래 예정월에 유지됩니다. 실제 지급일·지급액은 ‘엄마 카드 할부’에서 따로 확인할 수 있습니다.`;
     const warning=document.getElementById('instAutomaticWarning');
     warning.hidden=!installmentAutoWarnings.length;
     warning.textContent=installmentAutoWarnings.length?'중복 확인 필요: '+installmentAutoWarnings.map(x=>`${x.plan.meta.name} ${instMeta(x.row).due_month}`).join(', ')+'. 같은 이름·월의 기존 지출이 있어 해당 회차의 자동 반영을 보류했습니다. ‘기존 지출 편입’으로 연결하세요.':'';
@@ -2983,12 +3131,21 @@ if (typeof window.supabase === 'undefined') {
   updateInstallmentPreview();
 
   updateWorkPayPreview();
+  let lastInstallmentPurchaseMonth=document.getElementById("instPurchaseDate").value.slice(0,7);
+  document.getElementById("instPurchaseDate").addEventListener("change",()=>{
+    const month=document.getElementById("instPurchaseDate").value.slice(0,7);
+    const first=document.getElementById("instFirstMonth");
+    if(installmentEditingId===null && (!first.value || first.value===lastInstallmentPurchaseMonth)) first.value=month;
+    lastInstallmentPurchaseMonth=month;
+    updateInstallmentPreview();
+  });
   // 최종 데이터 로드
   loadAll();
 }
 </script>
 </body>
 </html>
+
 
 
 
