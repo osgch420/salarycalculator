@@ -450,19 +450,19 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
   </div>
 
 <details class="card" id="passManager" open>
-  <summary class="inst-management-title">🔁 대납 관리 <span class="tag" id="passRemainingTag">불러오는 중</span></summary>
-  <p class="sub" style="margin-top:12px">대신 결제한 돈과 돌려받은 돈을 한 건씩 연결해 관리합니다. 카드비에 포함된 대납은 지출에 한 번 더 더하지 않습니다.</p>
+  <summary class="inst-management-title">🔁 <span id="passMonthTitle">이번 달 대납 관리</span> <span class="tag" id="passRemainingTag">불러오는 중</span></summary>
+  <p class="sub" style="margin-top:12px">가계부에서 선택한 달의 카드비에 포함되는 대납을 보여줍니다. 다른 달에 받은 돈도 해당 대납에 연결했다면 받은 금액에 포함됩니다.</p>
   <div class="summary-grid" id="passSummary"></div>
   <p class="sub" id="passUnlinkedNotice" style="margin-top:12px"></p>
   <div id="passStatus" role="status" aria-live="polite"></div>
   <div class="row" style="align-items:end;margin-top:16px">
     <button type="button" onclick="openPassExpense()">＋ 대납 등록</button>
-    <div class="field"><label for="passFilter">표시할 대납</label><select id="passFilter" onchange="renderPassManager()"><option value="pending">아직 받을 돈 (미연결 포함)</option><option value="all">전체 기간 · 모든 대납</option><option value="done">정산 완료</option><option value="month">선택한 달 카드비에 포함</option></select></div>
+    <div class="field"><label for="passFilter">표시할 대납</label><select id="passFilter" onchange="renderPassManager()"><option value="all">이 달 대납 전체</option><option value="pending">이 달 아직 받을 돈</option><option value="done">이 달 정산 완료</option></select></div>
     <div class="field"><label for="passSearch">대납 검색</label><input id="passSearch" type="text" placeholder="사람 이름이나 내역" oninput="renderPassManager()"></div>
   </div>
   <div id="passEditor" class="card" hidden style="background:var(--accent-soft)"></div>
   <div id="passCases"></div>
-  <details id="passUnlinkedDetails" style="margin-top:16px"><summary style="cursor:pointer;font-weight:700">연결하지 않은 정산 수입 <span id="passUnlinkedCount"></span></summary><p class="sub" style="margin-top:8px">이미 입력한 수입입니다. 해당 대납의 ‘기존 입금 연결’을 눌러 연결하세요. 새 수입을 다시 만들 필요가 없습니다.</p><div id="passUnlinkedList" class="inst-table"></div></details>
+  <details id="passUnlinkedDetails" style="margin-top:16px"><summary style="cursor:pointer;font-weight:700">이 달 받은 정산 수입 중 미연결 <span id="passUnlinkedCount"></span></summary><p class="sub" style="margin-top:8px">이미 입력한 수입입니다. 해당 대납의 ‘기존 입금 연결’을 눌러 연결하세요. 새 수입을 다시 만들 필요가 없습니다.</p><div id="passUnlinkedList" class="inst-table"></div></details>
 </details>
 
 <!-- 엄마 카드 할부: 약정 등록과 실제 지급을 구분한다. -->
@@ -549,18 +549,21 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
   <!-- 카드값 & 순수 실사용액 (달마다 따로 저장됨) -->
   <div class="card" id="cardBillCard">
     <h2>💳 <span id="cardBillTitle">이번 달</span> 카드값 · 순수 실사용액</h2>
-    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">청구서 총액을 비교용으로 저장하는 곳입니다. 월별·연간 요약에는 내역 추가에서 입력한 '카드비' 지출만 반영되므로, 여기에 같은 금액을 저장해도 지출이 늘어나지 않습니다.</p>
+    <p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">청구서 총액을 입력하면 이 달 카드비 지출에 자동 반영됩니다. 이미 따로 입력한 카드비는 중복 합산하지 않으며, 총액을 수정하면 지출도 함께 바뀝니다.</p>
 
     <div class="row">
       <div class="field">
         <label for="cardBillInput">카드값 총액 (원)</label>
         <input type="number" id="cardBillInput" min="0" placeholder="예: 80만원이면 80">
-        <small style="font-size:11px;color:var(--ink-soft);display:block;margin-top:2px;">* 80처럼 적고 다른 곳을 누르면 800,000원으로 바뀌면서 자동 저장됩니다. 비우고 나가면 이 달 기록이 지워집니다.</small>
+        <small style="font-size:11px;color:var(--ink-soft);display:block;margin-top:2px;">* 80은 800,000원으로 저장됩니다. 입력 후 다른 곳을 누르거나 저장을 누르세요. 빈칸은 저장하지 않으며, 0원을 저장하면 이 달 카드비 지출을 제외합니다.</small>
       </div>
       <div class="field" style="flex:0 0 auto;min-width:0;display:flex;align-items:flex-start;padding-top:25px;">
-        <button class="btn-ghost" id="cardBillClearBtn" style="font-size:13px;padding:9px 12px;display:none;white-space:nowrap;" onclick="clearCardBill()">이 달 카드값 지우기</button>
+        <button type="button" id="cardBillSaveBtn" onclick="saveCardBillInput()" style="margin-right:8px">저장</button>
+        <button class="btn-ghost" id="cardBillClearBtn" style="font-size:13px;padding:9px 12px;display:none;white-space:nowrap;" onclick="clearCardBill()">이 달 카드비 제외</button>
       </div>
     </div>
+    <p id="cardBillLinkStatus" style="font-size:13px;color:var(--accent)"></p>
+    <details id="cardBillOriginals" hidden style="margin:12px 0"><summary style="cursor:pointer">기존에 따로 입력한 카드비 <span id="cardBillOriginalCount"></span>건 보기</summary><p class="sub">원래 날짜·금액·메모는 보관됩니다. 현재 지출에는 위 카드값 총액만 한 번 반영합니다.</p><div style="overflow:auto"><table><thead><tr><th>날짜</th><th>메모</th><th class="num">원래 금액</th></tr></thead><tbody id="cardBillOriginalList"></tbody></table></div></details>
     <div class="saved-hint" id="cardBillHint" style="height:auto;min-height:16px;"></div>
 
     <div id="cardBillLedgerHint" style="display:none; font-size:13px; color:#9a5b1a; background:#fdf3e3; border-radius:8px; padding:10px 12px; margin-top:4px;">
@@ -642,7 +645,8 @@ input[type=month]{width:100%;padding:10px 12px;font:inherit;border:1px solid var
     <div class="row">
       <div class="field">
         <label for="ledgerAmt">금액 (원)</label>
-        <input type="number" id="ledgerAmt" min="0" placeholder="예: 5.6 입력 시 56000원 변환">
+        <p id="passAmountHelp" hidden style="font-size:12px;color:var(--ink-soft)">다른 사람 몫만 입력하세요. 총 33,000원 중 내 몫이 17,500원이면 대납은 15,500원입니다. 받은 돈은 저장 후 ‘받았어요’로 연결합니다.</p>
+      <input type="number" id="ledgerAmt" min="0" placeholder="예: 5.6 입력 시 56000원 변환">
       </div>
       <div class="field">
         <label for="ledgerNote">메모 (선택)</label>
@@ -731,6 +735,8 @@ if (typeof window.supabase === 'undefined') {
     const cat = document.getElementById("ledgerCat").value;
     const row = document.getElementById("cardDueRow");
     if(!row) return;
+    const amountHelp=document.getElementById("passAmountHelp");
+    if(amountHelp)amountHelp.hidden=cat!=="대납";
     if(cat === "대납"){
       row.style.display = "flex";
       // 기본값: 다음 달로 자동 채워두기 (비어있을 때만)
@@ -1182,7 +1188,7 @@ if (typeof window.supabase === 'undefined') {
   }
 
   // 카드비는 청구서 총액, 대납은 그 안에 포함된 금액을 구분하는 기록이다.
-  // 소비 금액과 현금 유출을 구분하며, card_bills의 비교용 저장값은 합산하지 않는다.
+  // 월 카드값과 수동 카드비는 projectCardBills에서 한 번만 반영한다.
   function expenseSummaryOfMonth(month){
     const byCategory = Object.create(null);
     let cardBill = 0;
@@ -1317,22 +1323,23 @@ if (typeof window.supabase === 'undefined') {
   }
   function renderPassManager(){
     const area=document.getElementById("passCases");if(!area)return;
-    const model=passModel(), expenses=model.expenses;
+    const month=currentLedgerMonth(),model=passModel(),expenses=model.expenses.filter(e=>dueMonthOf(e.row)===month);
+    document.getElementById('passMonthTitle').textContent=monthLabel(month)+' 대납 관리';
     const total=expenses.reduce((s,e)=>s+Number(e.row.amount),0),received=expenses.reduce((s,e)=>s+e.received,0),pending=expenses.reduce((s,e)=>s+e.remaining,0);
-    const unlinked=model.incomes.filter(i=>i.available>0 || i.issues.length);
+    const unlinked=model.incomes.filter(i=>ym(i.row.entry_date)===month && (i.available>0 || i.issues.length));
     const uncertain=unlinked.length || expenses.some(e=>e.issues.length);
     document.getElementById("passRemainingTag").textContent="남은 금액 "+won(pending)+"원"+(uncertain?" · 연결 확인":"");
-    document.getElementById("passSummary").innerHTML=[["전체 대납 금액",total,"s-accent"],["연결된 받은 금액",received,"s-income"],["아직 받을 금액",pending,"s-pending"]].map(([label,value,cls])=>`<div class="stat ${cls}"><div class="k">${label}</div><div class="v">${won(value)}<small> 원</small></div></div>`).join("");
-    document.getElementById("passUnlinkedNotice").textContent=unlinked.length?`연결 확인이 필요한 정산 수입 ${unlinked.length}건이 있습니다. 연결 전에는 ‘받은 금액’에 포함하지 않으므로 남은 금액이 실제보다 크게 보일 수 있습니다.`:"날짜가 달라도 이 대납에 연결된 입금만 합산합니다. 나눠 받은 돈도 각각 연결할 수 있습니다.";
-    const filter=document.getElementById("passFilter").value,query=document.getElementById("passSearch").value.trim().toLowerCase(),month=document.getElementById("ledgerMonth").value;
+    document.getElementById("passSummary").innerHTML=[["이 달 카드비에 포함된 대납",total,"s-accent"],["연결된 받은 금액",received,"s-income"],["아직 받을 금액",pending,"s-pending"]].map(([label,value,cls])=>`<div class="stat ${cls}"><div class="k">${label}</div><div class="v">${won(value)}<small> 원</small></div></div>`).join("");
+    document.getElementById("passUnlinkedNotice").textContent=unlinked.length?`이 달 받은 정산 수입 중 연결 확인이 필요한 내역 ${unlinked.length}건이 있습니다. 연결 전에는 ‘받은 금액’에 포함하지 않으므로 남은 금액이 실제보다 크게 보일 수 있습니다.`:"날짜가 달라도 이 대납에 연결된 입금만 합산합니다. 나눠 받은 돈도 각각 연결할 수 있습니다.";
+    const filter=document.getElementById("passFilter").value,query=document.getElementById("passSearch").value.trim().toLowerCase();
     const shown=expenses.filter(e=>(filter!=="pending"||e.remaining>0)&&(filter!=="done"||(e.remaining===0&&!e.issues.length))&&(filter!=="month"||dueMonthOf(e.row)===month)&&(!query||passLabel(e.row).toLowerCase().includes(query))).sort((a,b)=>b.row.entry_date.localeCompare(a.row.entry_date)||Number(b.row.id)-Number(a.row.id));
     area.innerHTML=shown.length?shown.map(e=>{
       const r=e.row,candidate=passCandidate(e,model),label=escapeInst(passLabel(r)||"메모 없는 대납");
       const history=e.links.map(l=>`<li>${escapeInst(l.date)} · ${won(l.amount)}원 · ${escapeInst(l.note)} <button type="button" class="edit" onclick="unlinkPassReceipt(${Number(l.incomeId)},${Number(r.id)})" ${passBusy?"disabled":""}>연결 해제</button></li>`).join("");
       return `<article class="card" id="pass-case-${Number(r.id)}" style="padding:16px;margin-bottom:12px"><div class="inst-head"><h2 style="margin:0">${label} <span class="tag">${e.issues.length?"확인 필요":e.remaining===0?"정산 완료":e.received?"일부 받음":"입금 연결 필요"}</span></h2><button type="button" class="edit" onclick="startEditLedger(${Number(r.id)})">대납 수정</button></div><p class="inst-muted">결제일 ${escapeInst(r.entry_date)} · 카드 청구 ${escapeInst(dueMonthOf(r))}</p><div class="pass-amounts"><span>받을 금액 <b>${won(r.amount)}원</b></span><span>받은 금액 <b>${won(e.received)}원</b></span><span>남은 금액 <b style="color:var(--money)">${won(e.remaining)}원</b></span></div>${e.issues.map(x=>`<p style="color:var(--danger)">${escapeInst(x)}</p>`).join("")}<div class="row" style="margin-top:12px"><button type="button" class="edit" onclick="openPassReceipt(${Number(r.id)},'new')" ${e.remaining<=0||e.issues.length||passBusy?"disabled":""}>받았어요</button><button type="button" class="btn-ghost" style="font-size:13px;padding:6px 10px" onclick="openPassReceipt(${Number(r.id)},'existing')" ${e.remaining<=0||e.issues.length||passBusy?"disabled":""}>기존 입금 연결</button></div>${candidate?`<p class="inst-muted">같은 메모·금액의 입금: ${escapeInst(candidate.row.entry_date)} · ${won(candidate.available)}원 <button type="button" class="edit" onclick="openPassReceipt(${Number(r.id)},'existing',${Number(candidate.row.id)})">추천 입금 확인</button></p>`:""}<details><summary style="cursor:pointer;font-size:13px">연결한 입금 ${e.links.length}건</summary>${history?`<ul class="pass-history">${history}</ul>`:'<p class="inst-muted">아직 연결한 입금이 없습니다.</p>'}</details></article>`;
-    }).join(""):'<p class="empty">표시할 대납이 없습니다.</p>';
+    }).join(""):'<p class="empty">선택한 달과 조건에 해당하는 대납이 없습니다.</p>';
     document.getElementById("passUnlinkedCount").textContent=unlinked.length+"건";
-    document.getElementById("passUnlinkedList").innerHTML=unlinked.length?`<table><thead><tr><th>입금일</th><th>내역</th><th class="num">연결하지 않은 금액</th><th>관리</th></tr></thead><tbody>${unlinked.map(i=>`<tr><td>${escapeInst(i.row.entry_date)}</td><td>${escapeInst(passLabel(i.row))}${i.issues.map(x=>`<br><small style="color:var(--danger)">${escapeInst(x)}</small>`).join("")}</td><td class="num">${won(i.available)}원</td><td><button type="button" class="edit" onclick="startEditLedger(${Number(i.row.id)})">수입 보기</button>${i.meta?`<button type="button" class="edit" onclick="unlinkPassReceipt(${Number(i.row.id)},null)">연결 전체 해제</button>`:""}</td></tr>`).join("")}</tbody></table>`:'<p class="empty">모든 정산 수입의 연결이 확인되었습니다.</p>';
+    document.getElementById("passUnlinkedList").innerHTML=unlinked.length?`<table><thead><tr><th>입금일</th><th>내역</th><th class="num">연결하지 않은 금액</th><th>관리</th></tr></thead><tbody>${unlinked.map(i=>`<tr><td>${escapeInst(i.row.entry_date)}</td><td>${escapeInst(passLabel(i.row))}${i.issues.map(x=>`<br><small style="color:var(--danger)">${escapeInst(x)}</small>`).join("")}</td><td class="num">${won(i.available)}원</td><td><button type="button" class="edit" onclick="startEditLedger(${Number(i.row.id)})">수입 보기</button>${i.meta?`<button type="button" class="edit" onclick="unlinkPassReceipt(${Number(i.row.id)},null)">연결 전체 해제</button>`:""}</td></tr>`).join("")}</tbody></table>`:'<p class="empty">이 달 받은 정산 수입 중 미연결 내역이 없습니다.</p>';
   }
   window.renderPassManager=renderPassManager;
   window.closePassEditor=function(){if(passBusy)return;passEditorContext=null;document.getElementById("passEditor").hidden=true;};
@@ -2138,7 +2145,7 @@ if (typeof window.supabase === 'undefined') {
   }
   function refreshAutomaticInstallmentExpenses(){
     const projection=instAutomaticProjection(installmentRecords,installmentBaseLedger,ymd(new Date()).slice(0,7));
-    ledgerEntries=[...installmentScheduledLedger(installmentRecords,installmentBaseLedger),...projection.rows];
+    ledgerEntries=projectCardBills([...installmentScheduledLedger(installmentRecords,installmentBaseLedger),...projection.rows],cardBills);
     installmentAutoWarnings=projection.warnings;
   }
   function instAutomaticRow(id){return ledgerEntries.find(r=>String(r.id)===String(id)&&r._autoInstallment);}
@@ -2234,7 +2241,7 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("cardBillTitle").textContent = `${y}년 ${m}월`;
 
     const saved = Number(cardBills[month] || 0);
-    const hasSaved = saved > 0;
+    const hasSaved = hasCardBill(month);
 
     // 타이핑 중이 아닐 때만 입력칸을 저장된 값으로 맞춤
     if(document.activeElement !== inputEl){
@@ -2243,9 +2250,9 @@ if (typeof window.supabase === 'undefined') {
     document.getElementById("cardBillClearBtn").style.display = hasSaved ? "inline-block" : "none";
 
     // 같은 달에 '카드비' 항목으로 적어둔 지출이 있으면 그 금액을 쓸 수 있게 안내
-    const ledgerSum = ledgerCardBillOfMonth(month);
+    const ledgerSum = originalCardRows(month).reduce((s,r)=>s+Number(r.amount),0);
     const hintEl = document.getElementById("cardBillLedgerHint");
-    if(ledgerSum > 0 && saved !== ledgerSum){
+    if(ledgerSum > 0 && !hasSaved){
       document.getElementById("cardBillLedgerAmt").textContent = won(ledgerSum);
       hintEl.style.display = "block";
     } else {
@@ -2254,6 +2261,7 @@ if (typeof window.supabase === 'undefined') {
 
     if(!cardBillsReady && cardBillsError) cardBillHint(cardBillsError, true);
 
+    renderCardBillLink(month);
     updateNetUsagePreview();
     renderCardBillHistory();
   }
@@ -2295,69 +2303,105 @@ if (typeof window.supabase === 'undefined') {
     if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
   };
 
-  async function saveCardBill(month, amount){
-    if(!cardBillsReady){
-      cardBillHint(cardBillsError || "card_bills 표가 없어 저장할 수 없습니다.", true);
-      return;
-    }
-    try{
-      const {error} = await sb.from("card_bills")
-        .upsert({month, amount, updated_at: new Date().toISOString()}, {onConflict: "month"});
-      if(error) throw error;
-      cardBills[month] = amount;
-      cardBillHint(`${month} 카드값 ${won(amount)}원 저장됨`);
-    }catch(err){
-      cardBillHint("저장 실패: " + (err.message || err), true);
-    }
-    // 저장하는 사이 다른 달로 옮겼을 수 있으니 지금 보고 있는 달 기준으로 다시 그림
-    renderCardBill(currentLedgerMonth());
+  // 월별 청구액을 단일 기준으로 투영한다. 원래 지출은 보관하며 중복 합산하지 않는다.
+  const cardBillSaving = new Set();
+  const validCardMonth = month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+  const isManualCardExpense = row => (!row.type || row.type === 'expense') && row.category === '카드비' && !instMeta(row);
+  function hasCardBill(month, bills=cardBills){
+    return validCardMonth(month) && Object.prototype.hasOwnProperty.call(bills,month)
+      && bills[month] !== null && bills[month] !== '' && Number.isSafeInteger(Number(bills[month])) && Number(bills[month]) >= 0;
   }
-
-  async function deleteCardBill(month){
-    if(cardBills[month] === undefined){ renderCardBill(currentLedgerMonth()); return; }
-    try{
-      const {error} = await sb.from("card_bills").delete().eq("month", month);
-      if(error) throw error;
-      delete cardBills[month];
-      cardBillHint(`${month} 카드값 기록을 지웠습니다.`);
-    }catch(err){
-      cardBillHint("삭제 실패: " + (err.message || err), true);
-    }
-    renderCardBill(currentLedgerMonth());
+  function originalCardRows(month){
+    return installmentBaseLedger.filter(r=>isManualCardExpense(r) && ym(r.entry_date)===month);
   }
-
-  window.clearCardBill = function(){
-    const month = currentLedgerMonth();
-    if(!confirm(`${month} 카드값 기록을 지울까요?`)) return;
-    deleteCardBill(month);
+  function projectCardBills(rows,bills){
+    const months=Object.keys(bills).filter(month=>hasCardBill(month,bills));
+    const active=new Set(months);
+    const result=rows.filter(r=>!r._autoCardBill && !(isManualCardExpense(r) && active.has(ym(r.entry_date))));
+    for(const month of months){
+      const amount=Number(bills[month]);
+      if(amount===0)continue;
+      result.push({id:'card-bill:'+month,entry_date:month+'-01',type:'expense',category:'카드비',amount,
+        note:'월 카드값 총액 · 자동 연동',card_due_month:null,_autoCardBill:true,_cardBillMonth:month});
+    }
+    return result;
+  }
+  window.openCardBillEditor = function(month){
+    if(!validCardMonth(month))return;
+    document.getElementById('ledgerMonth').value=month;
+    renderLedger();
+    document.getElementById('cardBillCard').scrollIntoView({behavior:'smooth',block:'center'});
+    document.getElementById('cardBillInput').focus();
   };
-
-  // '카드비' 항목 지출 합계를 그대로 이 달 카드값으로 저장
-  window.useLedgerCardBill = function(){
-    const month = currentLedgerMonth();
-    const sum = ledgerCardBillOfMonth(month);
-    if(sum > 0) saveCardBill(month, sum);
-  };
-
-  // 입력칸 이벤트: 타이핑 중엔 미리보기만, 칸을 벗어나면(또는 Enter) 정리해서 저장
-  {
-    const inputEl = document.getElementById("cardBillInput");
-    inputEl.addEventListener("input", updateNetUsagePreview);
-    inputEl.addEventListener("keydown", e => { if(e.key === "Enter") inputEl.blur(); });
-    inputEl.addEventListener("blur", () => {
-      const month = currentLedgerMonth();
-      const bill = normalizeBill(inputEl.value);
-      if(!bill){
-        // 비워두고 나가면 이 달 기록 삭제
-        if(cardBills[month] !== undefined) deleteCardBill(month);
-        else updateNetUsagePreview();
-        return;
-      }
-      inputEl.value = String(bill); // 80 → 800000 으로 표시
-      if(Number(cardBills[month]) === bill){ updateNetUsagePreview(); return; } // 바뀐 게 없으면 저장 안 함
-      saveCardBill(month, bill);
+  function cardLedgerMutationBlocked(ids){
+    return ids.some(id=>{
+      const row=installmentBaseLedger.find(r=>String(r.id)===String(id));
+      return String(id).startsWith('card-bill:') || (row && isManualCardExpense(row) && hasCardBill(ym(row.entry_date)));
     });
   }
+  function renderCardBillLink(month){
+    const rows=originalCardRows(month),linked=hasCardBill(month);
+    const status=document.getElementById('cardBillLinkStatus');
+    status.textContent=linked
+      ? Number(cardBills[month])>0 ? `카드비 ${won(cardBills[month])}원이 지출에 자동 반영됩니다. 금액을 바꾸면 같은 달 지출도 함께 바뀝니다.` : '이 달 카드비 지출은 0원으로 설정되어 있습니다.'
+      : '카드값 총액을 저장하면 이 달 지출에 자동 반영됩니다.';
+    const box=document.getElementById('cardBillOriginals');
+    box.hidden=!(linked && rows.length);
+    document.getElementById('cardBillOriginalCount').textContent=rows.length;
+    document.getElementById('cardBillOriginalList').innerHTML=rows.map(r=>`<tr><td>${escapeInst(r.entry_date)}</td><td>${escapeInst(ledgerDisplayNote(r))}</td><td class="num">${won(r.amount)}원</td></tr>`).join('');
+    const busy=cardBillSaving.has(month);
+    document.getElementById('cardBillInput').disabled=busy || !cardBillsReady;
+    document.getElementById('cardBillClearBtn').disabled=busy || !cardBillsReady;
+    document.getElementById('cardBillSaveBtn').disabled=busy || !cardBillsReady;
+  }
+  async function saveCardBill(month,amount){
+    if(!validCardMonth(month)||!Number.isSafeInteger(amount)||amount<0){cardBillHint('카드값을 올바른 원 단위 금액으로 입력하세요.',true);return false;}
+    if(!cardBillsReady){cardBillHint(cardBillsError||'카드값을 불러온 뒤 다시 저장하세요.',true);return false;}
+    if(cardBillSaving.has(month))return false;
+    cardBillSaving.add(month);renderCardBill(currentLedgerMonth());
+    let success=false;
+    try{
+      const {data,error}=await sb.from('card_bills').upsert({month,amount,updated_at:new Date().toISOString()},{onConflict:'month'}).select('month,amount');
+      if(error)throw error;
+      if(data?.length!==1 || data[0].month!==month || Number(data[0].amount)!==amount)throw Error('저장 결과를 확인하지 못했습니다. 새로고침 후 금액을 확인하세요.');
+      cardBills[month]=amount;
+      renderLedger();
+      cardBillHint(`${month} 카드값 ${won(amount)}원 저장 · 지출 반영 완료`);
+      success=true;
+    }catch(err){cardBillHint('저장 확인 필요: '+(err.message||err),true);}
+    finally{cardBillSaving.delete(month);renderCardBill(currentLedgerMonth());}
+    return success;
+  }
+  // 0원을 저장해 제외 상태를 유지한다. 옛 수동 기록이 다시 지출로 나타나지 않는다.
+  window.clearCardBill = async function(){
+    const month=currentLedgerMonth();
+    if(cardBillSaving.has(month))return;
+    if(!confirm(`${month} 카드값과 카드비 지출을 0원으로 바꿀까요? 기존에 따로 입력한 기록은 보관됩니다.`))return;
+    await saveCardBill(month,0);
+  };
+  window.useLedgerCardBill = async function(){
+    const month=currentLedgerMonth();
+    const sum=originalCardRows(month).reduce((s,r)=>s+Number(r.amount),0);
+    if(sum>0)await saveCardBill(month,sum);
+  };
+  window.saveCardBillInput = async function(){
+    const month=currentLedgerMonth(),input=document.getElementById('cardBillInput'),raw=input.value.trim();
+    if(raw===''){renderCardBill(month);return false;}
+    const number=Number(raw);
+    if(!Number.isFinite(number)||number<0){cardBillHint('0원 이상의 금액을 입력하세요.',true);return false;}
+    const bill=number===0?0:normalizeBill(raw);
+    if(!Number.isSafeInteger(bill)){cardBillHint('금액을 확인하세요.',true);return false;}
+    input.value=String(bill);
+    if(hasCardBill(month)&&Number(cardBills[month])===bill){updateNetUsagePreview();return true;}
+    return saveCardBill(month,bill);
+  };
+  {
+    const input=document.getElementById('cardBillInput');
+    input.addEventListener('input',updateNetUsagePreview);
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur();}});
+    input.addEventListener('blur',()=>window.saveCardBillInput());
+  }
+
 
   // ── 실행 취소 토스트 (공통) ──
   let undoTimer = null;
@@ -2402,6 +2446,7 @@ if (typeof window.supabase === 'undefined') {
   }
 
   window.exportAllData = function(){
+    refreshAutomaticInstallmentExpenses();
     const wageInfo = `기본시급,${settings.wage||0}\n주시작요일,${settings.week_start===0?"일요일":"월요일"}\n\n`;
 
     let workCsv = "구분,근무일,입금일,근무유형,시간,출근,퇴근,직접입력금액,메모\n";
@@ -2430,8 +2475,10 @@ if (typeof window.supabase === 'undefined') {
     instPlans().forEach(p=>p.payments.forEach(r=>{const m=instMeta(r);installmentCsv += [m.key,m.sequence,m.due_month,Number(r.amount)>0?m.scheduled_amount:instExpectedAmount(r),Number(r.amount)>0?r.entry_date:"",r.amount,r._linkError?"연결 확인 필요":Number(r.amount)>0?"지급":instAutomaticRow(r.id)?"자동 지출 반영 (지급 미확인)":m.auto_expense_skip?"자동 반영 제외":"미지급",r._sourceId||""].map(csvEscape).join(",")+"\n";}));
     let passCsv="대납ID,대납내역,대납금액,정산수입ID,입금일,연결금액\n";
     passModel().expenses.forEach(e=>e.links.forEach(l=>{passCsv += [e.row.id,passLabel(e.row),e.row.amount,l.incomeId,l.date,l.amount].map(csvEscape).join(",")+"\n";}));
+    let originalCardCsv='구분,ID,원래 날짜,항목,원래 금액,원래 메모,현재 집계 상태\n';
+    installmentBaseLedger.filter(isManualCardExpense).forEach(r=>{originalCardCsv += ['기존 카드비 원본',r.id,r.entry_date,r.category,r.amount,ledgerDisplayNote(r),hasCardBill(ym(r.entry_date))?'월 카드값에 통합 (별도 합산 안 함)':'지출 반영'].map(csvEscape).join(',')+'\n';});
     const bom = "\uFEFF"; // 엑셀 한글 깨짐 방지
-    const csv = bom + wageInfo + workCsv + "\n" + ledgerCsv + "\n" + cardCsv + "\n" + installmentCsv + "\n" + passCsv;
+    const csv = bom + wageInfo + workCsv + "\n" + ledgerCsv + "\n" + cardCsv + "\n" + installmentCsv + "\n" + passCsv + "\n" + originalCardCsv;
 
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
@@ -2506,6 +2553,8 @@ if (typeof window.supabase === 'undefined') {
 
   // 항목 일괄 변경
   window.bulkUpdateCategory = async function(){
+    if(cardLedgerMutationBlocked([...selectedIds])){setStatus('ledgerStatus','연동된 카드비는 카드값 총액에서 수정하세요.',true);return;}
+    if(document.getElementById('bulkCat').value==='카드비' && installmentBaseLedger.some(r=>selectedIds.has(String(r.id))&&hasCardBill(ym(r.entry_date)))){setStatus('ledgerStatus','선택한 달에 카드값이 이미 있습니다. 카드값 총액에서 수정하세요.',true);return;}
     if(!await passMutationAllowed([...selectedIds]))return;
     if([...selectedIds].some(id=>instMeta(ledgerEntries.find(e=>String(e.id)===String(id))))){setStatus("ledgerStatus","할부 지급은 할부 관리에서 수정하세요.",true);return;}
     const cat = document.getElementById("bulkCat").value;
@@ -2540,6 +2589,7 @@ if (typeof window.supabase === 'undefined') {
 
   // 일괄 삭제
   window.bulkDelete = async function(){
+    if(cardLedgerMutationBlocked([...selectedIds])){setStatus('ledgerStatus','연동된 카드비는 카드값 총액에서 수정하세요.',true);return;}
     if(!await passMutationAllowed([...selectedIds]))return;
     if([...selectedIds].some(id=>instMeta(ledgerEntries.find(e=>String(e.id)===String(id))))){setStatus("ledgerStatus","할부 지급 취소는 할부 관리에서 처리하세요.",true);return;}
     const ids = [...selectedIds];
@@ -2779,7 +2829,8 @@ if (typeof window.supabase === 'undefined') {
       automatic: !!e._autoInstallment,
       linkedSlot: linkedSourceSlots.get(String(e.id)),
       canLinkInstallment: instLinkableExpense(e),
-      editable: !instMeta(e) 
+      cardMonth: e._cardBillMonth,
+      editable: !instMeta(e) && !e._autoCardBill 
     }));
     const allRows = [...workRows, ...expRows].sort((a,b)=> a.date<b.date?1:-1);
 
@@ -2845,12 +2896,13 @@ if (typeof window.supabase === 'undefined') {
           </div>`;
         }
         
+        if(r.cardMonth) actionsHtml = `<button class="edit" onclick="openCardBillEditor('${r.cardMonth}')">카드값 수정</button>`;
         if(r.installment) actionsHtml = `<button class="edit" onclick="openInstallmentPayment(${Number(r.id)})">${r.automatic?"지급 확인":"할부 관리"}</button>`;
         else if(r.linkedSlot) actionsHtml += `<button class="edit" onclick="showInstallmentForEntry(${Number(r.id)})">할부 연결됨</button>`;
         else if(r.canLinkInstallment) actionsHtml += `<button class="edit" onclick="openInstallmentImportFromEntry(${Number(r.id)})">할부로 연결</button>`;
         h+=`<tr class="${rowClass}">
           <td>${checkHtml}</td>
-          <td>${r.date}<br><span style="font-size:11px;color:var(--ink-soft)">${DAYS[d.getDay()]}요일</span></td>
+          <td>${r.cardMonth ? r.cardMonth+' 월 합계' : r.date+'<br><span style="font-size:11px;color:var(--ink-soft)">'+DAYS[d.getDay()]+'요일</span>'}</td>
           <td>${badge}</td>
           <td class="cat">${r.category}</td>
           <td class="num" style="${amtColor}">${r.type==="income"?"+":"−"}${won(r.amount)}</td>
@@ -2910,13 +2962,13 @@ if (typeof window.supabase === 'undefined') {
 
       // 월별 카드값 — 표가 아직 없어도 다른 기능은 그대로 쓰도록 오류만 카드에 표시
       const {data:cd, error:ce} = await sb.from("card_bills").select("*");
-      cardBills = {};
       if(ce){
         cardBillsReady = false;
         cardBillsError = "월별 카드값을 저장할 card_bills 표가 없습니다. Supabase SQL 편집기에서 표 생성 쿼리를 실행해주세요. (" + (ce.message||ce) + ")";
       } else {
         cardBillsReady = true;
         cardBillsError = null;
+        cardBills = {};
         (cd||[]).forEach(r => { cardBills[r.month] = Number(r.amount) || 0; });
       }
 
@@ -3043,6 +3095,7 @@ if (typeof window.supabase === 'undefined') {
   window.startEditLedger = function(id) {
     const entry = installmentBaseLedger.find(e => e.id === id);
     if(!entry) return;
+    if(isManualCardExpense(entry)&&hasCardBill(ym(entry.entry_date))){openCardBillEditor(ym(entry.entry_date));return;}
     if(instMeta(entry)){openInstallmentPayment(id);return;}
 
     editingLedgerId = id;
@@ -3180,6 +3233,11 @@ if (typeof window.supabase === 'undefined') {
     
     if(!entry_date){alert("날짜를 선택하세요.");return;}
     if(!amount||amount<=0){alert("금액을 올바르게 입력하세요.");return;}
+    if(ledgerType==='expense' && category==='카드비' && hasCardBill(ym(entry_date))){
+      openCardBillEditor(ym(entry_date));
+      cardBillHint('이 달 카드비가 이미 연동되어 있습니다. 위 카드값 총액을 수정하세요.',true);
+      return;
+    }
     if(!editingLedgerId && !["카드비","대납"].includes(category)){
       const duplicate=instManualDuplicate(ledgerType,entry_date,amount,note);
       if(duplicate){
@@ -3227,6 +3285,7 @@ if (typeof window.supabase === 'undefined') {
   }
 
   window.deleteLedger = async function(id){
+    if(cardLedgerMutationBlocked([id])){const r=installmentBaseLedger.find(e=>String(e.id)===String(id));if(r)openCardBillEditor(ym(r.entry_date));return;}
     if(!await passMutationAllowed([id]))return;
     if(instMeta(ledgerEntries.find(e=>e.id===id))){await cancelInstallmentPayment(id);return;}
     if(!confirm("이 내역을 정말 삭제할까요?")) return;
